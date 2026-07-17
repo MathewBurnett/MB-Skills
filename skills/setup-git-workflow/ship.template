@@ -1,0 +1,92 @@
+#!/usr/bin/env bash
+# Raise a PR for the current working-tree changes.
+#
+#   bin/ship "feat: short title" ["longer body"]
+#   bin/ship --base {{EPIC_EXAMPLE}} "feat: short title" ["longer body"]
+#
+# Verifies, branches off the base if needed, commits, pushes, and opens a PR
+# against the base branch (default: {{DEFAULT_BASE}}; pass --base to target an
+# epic/integration branch instead). It deliberately does NOT merge — review
+# happens on the PR; run bin/land once you've decided to merge.
+set -euo pipefail
+cd "$(dirname "$0")/.."
+
+# --base/-b <branch> may appear anywhere; the rest are positional title/body.
+base="{{DEFAULT_BASE}}"
+args=()
+while [ $# -gt 0 ]; do
+    case "$1" in
+        -b|--base) base="${2:?--base needs a branch}"; shift 2 ;;
+        --base=*)  base="${1#*=}"; shift ;;
+        *)         args+=("$1"); shift ;;
+    esac
+done
+set -- "${args[@]+"${args[@]}"}"
+
+title="${1:-}"; body="${2:-}"
+[ -n "$title" ] || { echo "usage: bin/ship [--base <branch>] \"<title>\" [\"<body>\"]" >&2; exit 2; }
+[ -n "$(git status --porcelain)" ] || { echo "✗ nothing to ship — working tree is clean" >&2; exit 1; }
+
+# {{FORMATTER}} runs on the changed files only (not the whole tree) so adopting
+# it never produces a surprise reformat — files get formatted as they're touched.
+changed=$( { git diff --name-only HEAD -- {{SOURCE_DIR}}; git ls-files -o --exclude-standard -- {{SOURCE_DIR}}; } | grep -Ei '{{SOURCE_EXT}}' | sort -u || true)
+
+echo "→ formatting + linting…"
+if ! {
+    {{LINT_COMMANDS}}
+} >/tmp/ship-lint.log 2>&1; then
+    echo "✗ lint/format problems that could not be auto-fixed:"; tail -30 /tmp/ship-lint.log; exit 1
+fi
+echo "✓ lint + format clean"
+
+echo "→ verifying…"
+if ! { {{VERIFY_COMMANDS}}; } >/tmp/ship-verify.log 2>&1; then
+    echo "✗ verify failed:"; tail -25 /tmp/ship-verify.log; exit 1
+fi
+echo "✓ verify green"
+
+# Don't commit onto a persistent branch directly — cut a feature branch first.
+# The base always counts as protected, whatever PROTECTED_BRANCHES lists.
+branch=$(git rev-parse --abbrev-ref HEAD)
+needs_branch=false
+[ "$branch" = "$base" ] && needs_branch=true
+for protected in {{PROTECTED_BRANCHES}}; do
+    [ "$branch" = "$protected" ] && needs_branch=true && break
+done
+
+if $needs_branch; then
+    type=$(printf '%s' "$title" | sed -nE 's/^([a-z]+)(\([^)]*\))?:.*/\1/p')
+    slug=$(printf '%s' "$title" \
+        | sed -E 's/^[a-z]+(\([^)]*\))?:[[:space:]]*//' \
+        | tr '[:upper:]' '[:lower:]' \
+        | sed -E 's/[^a-z0-9]+/-/g; s/^-+//; s/-+$//' \
+        | cut -c1-50 | sed -E 's/-+$//')
+    branch="${type:-change}/${slug:-update}"
+    echo "→ branching: $branch (off $base)"
+    git checkout -q -b "$branch"
+fi
+
+git add -A
+msg="$title"
+[ -n "$body" ] && msg="$title
+
+$body"
+printf '%s\n\nCo-Authored-By: Claude Opus 4.8 <noreply@anthropic.com>\n' "$msg" | git commit -q -F -
+
+git push -q -u origin "$branch"
+
+# Re-runnable: if a PR is already open for this branch, the push above updated
+# it; otherwise open one against the base branch.
+if url=$(gh pr view "$branch" --json url -q .url 2>/dev/null) && [ -n "$url" ]; then
+    echo "↻ updated existing PR: $url"
+    fresh_pr=false
+else
+    gh pr create --base "$base" --head "$branch" --title "$title" --body "$body
+
+🤖 Generated with [Claude Code](https://claude.com/claude-code)"
+    fresh_pr=true
+fi
+
+{{VERSION_BUMP_BLOCK}}
+
+gh pr view "$branch" --json url -q .url

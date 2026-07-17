@@ -1,0 +1,72 @@
+#!/usr/bin/env bash
+# Bump the M.R.V.f version (see {{ADR_REF}}). The VERSION file is the single
+# source of truth; CI mirrors it to a {{RELEASE_TARGET}} on merge to {{PROD_BRANCH}}.
+#
+#   M major     milestone — manual, on request
+#   R revision  epic feature complete — agent suggests when closing the epic
+#   V version   the PR that ships the work — set at "ship it" time
+#   f fix       a commit with no PR
+#
+# A PR number only exists once the PR is open, so bin/ship bumps V *after*
+# opening it and amends the change into the same commit. Run this by hand only
+# for the R/M/f bumps, or when shipping outside bin/ship.
+#
+# Usage:
+#   bin/version show           print the current version
+#   bin/version pr [<number>]  ship-it: set V=<PR>, reset f. With no number,
+#                              resolves the current branch's PR (falling back to
+#                              the repo's most recent PR) via the gh CLI.
+#   bin/version fix            no-PR commit: increment f
+#   bin/version epic           epic complete: bump R, reset V and f
+#   bin/version major          milestone: bump M, reset R, V and f
+set -euo pipefail
+cd "$(dirname "$0")/.."
+
+file=VERSION
+[ -f "$file" ] || echo "0.0.0.0" > "$file"
+IFS=. read -r M R V f < "$file"
+
+# Resolve a PR number from gh: prefer the PR for the current branch (the one this
+# work will ship as), else the repo's most recent PR. Prints the number, or empty.
+resolve_pr() {
+    command -v gh >/dev/null 2>&1 || return 0
+    local n
+    n="$(gh pr view --json number -q .number 2>/dev/null || true)"
+    if [ -n "$n" ]; then
+        echo "using current branch's PR: #$n" >&2
+        printf '%s' "$n"
+        return 0
+    fi
+    n="$(gh pr list --state all --limit 1 --json number -q '.[0].number' 2>/dev/null || true)"
+    [ -n "$n" ] && echo "no PR for this branch — using the repo's most recent PR: #$n" >&2
+    printf '%s' "$n"
+}
+
+require_number() {
+    case "$1" in ('' | *[!0-9]*) echo "expected a number, got '$1'" >&2; exit 1 ;; esac
+}
+
+case "${1:-show}" in
+    show)
+        echo "$M.$R.$V.$f"; exit 0 ;;
+    fix)
+        f=$((f + 1)) ;;
+    pr)
+        if [ -n "${2:-}" ]; then
+            V="$2"
+        else
+            V="$(resolve_pr)"
+            [ -n "$V" ] || { echo "couldn't resolve a PR number — pass it: bin/version pr <n>" >&2; exit 1; }
+        fi
+        require_number "$V"; f=0 ;;
+    epic)
+        R=$((R + 1)); V=0; f=0 ;;
+    major)
+        M=$((M + 1)); R=0; V=0; f=0 ;;
+    *)
+        echo "usage: bin/version {show|pr [<n>]|fix|epic|major}" >&2; exit 1 ;;
+esac
+
+new="$M.$R.$V.$f"
+echo "$new" > "$file"
+echo "VERSION -> $new"

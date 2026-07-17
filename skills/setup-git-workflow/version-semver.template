@@ -1,0 +1,37 @@
+#!/usr/bin/env bash
+# Bump the semantic version (major.minor.patch). The VERSION file is the single
+# source of truth; CI mirrors it to a {{RELEASE_TARGET}} on merge to {{PROD_BRANCH}}.
+#
+# Semver is a promise to consumers, so the bump is a judgement call, not a
+# side effect of opening a PR: breaking change → major, new capability → minor,
+# fix → patch. bin/ship therefore does NOT bump this automatically.
+#
+# Usage:
+#   bin/version show     print the current version
+#   bin/version major    breaking change:  X.y.z → X+1.0.0
+#   bin/version minor    new capability:   x.Y.z → x.Y+1.0
+#   bin/version patch    bug fix:          x.y.Z → x.y.Z+1
+set -euo pipefail
+cd "$(dirname "$0")/.."
+
+file=VERSION
+[ -f "$file" ] || echo "0.1.0" > "$file"
+IFS=. read -r major minor patch < "$file"
+
+case "${1:-show}" in
+    show)
+        echo "$major.$minor.$patch"; exit 0 ;;
+    major)
+        major=$((major + 1)); minor=0; patch=0 ;;
+    minor)
+        minor=$((minor + 1)); patch=0 ;;
+    patch)
+        patch=$((patch + 1)) ;;
+    *)
+        echo "usage: bin/version {show|major|minor|patch}" >&2; exit 1 ;;
+esac
+
+new="$major.$minor.$patch"
+echo "$new" > "$file"
+echo "VERSION -> $new"
+{{MANIFEST_SYNC_NOTE}}

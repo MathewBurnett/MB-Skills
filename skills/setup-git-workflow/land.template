@@ -1,0 +1,48 @@
+#!/usr/bin/env bash
+# Merge an open PR once CI is green, then sync the base branch. Run this only
+# when you've decided to merge — bin/ship stops at PR creation so review can
+# happen first.
+#
+#   bin/land [<pr-number>]                        # merge into {{DEFAULT_BASE}} (default)
+#   bin/land --base {{EPIC_EXAMPLE}} [<pr-number>]  # epic slice → merge into the epic
+#
+# Pass --base for epic/integration branches: the post-merge sync checks out that
+# branch, and PRs into it that carry no CI checks are merged without waiting.
+set -euo pipefail
+cd "$(dirname "$0")/.."
+
+base="{{DEFAULT_BASE}}"
+args=()
+while [ $# -gt 0 ]; do
+    case "$1" in
+        -b|--base) base="${2:?--base needs a branch}"; shift 2 ;;
+        --base=*)  base="${1#*=}"; shift ;;
+        *)         args+=("$1"); shift ;;
+    esac
+done
+set -- "${args[@]+"${args[@]}"}"
+
+pr="${1:-}"
+[ -n "$pr" ] || pr=$(gh pr view --json number -q .number 2>/dev/null || true)
+[ -n "$pr" ] || { echo "usage: bin/land [--base <branch>] <pr-number> (no PR for the current branch)" >&2; exit 2; }
+
+echo "→ checking CI on PR #$pr…"
+if gh pr checks "$pr" >/tmp/land-ci.log 2>&1; then
+    echo "✓ CI green"
+elif grep -q "no checks reported" /tmp/land-ci.log; then
+    # {{NO_CHECKS_NOTE}}
+    echo "ℹ no CI checks on this PR — proceeding"
+else
+    echo "→ waiting for CI on PR #$pr…"
+    if ! timeout 600 gh pr checks "$pr" --watch --interval 20 >/tmp/land-ci.log 2>&1; then
+        echo "✗ checks did not pass (or timed out):"; tail -15 /tmp/land-ci.log; exit 1
+    fi
+    echo "✓ CI green"
+fi
+
+{{DEPLOY_CHECK_BLOCK}}
+
+gh pr merge "$pr" --merge --delete-branch
+git checkout -q "$base" && git pull -q --ff-only
+echo "✓ merged #$pr and synced $base:"
+git log --oneline -1

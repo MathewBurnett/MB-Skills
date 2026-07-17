@@ -1,0 +1,27 @@
+# ── {{VERSION_BUMP_BLOCK}} — M.R.V.f only; delete for semver or no versioning ──
+# Version the PR: V is the PR number, which only exists now that the PR is open.
+# Amend it into the commit we just pushed rather than adding a follow-up: CI then
+# runs once, on the final SHA, so bin/land's `gh pr checks` gate is honest. A
+# [skip ci] follow-up would leave the head SHA with no checks at all — which
+# land reads as "no checks reported" and merges straight through.
+#
+# Only ever amends a PR this run just opened ($fresh_pr): a re-run pushes onto a
+# branch someone may have reviewed, and its VERSION is already correct anyway.
+if [ -x bin/version ] && $fresh_pr; then
+    pr=$(gh pr view "$branch" --json number -q .number)
+    bin/version pr "$pr" >/dev/null
+    if [ -n "$(git status --porcelain VERSION)" ]; then
+        ver=$(bin/version show)
+        git add VERSION
+        git commit -q --amend --no-edit
+        # --force-with-lease refuses if origin moved under us (someone pushed to
+        # the branch between our push and now) rather than clobbering their work.
+        if git push -q --force-with-lease; then
+            echo "✓ VERSION → $ver (amended into the commit)"
+        else
+            echo "✗ VERSION bumped to $ver but the branch moved — push it yourself:" >&2
+            echo "  git push --force-with-lease" >&2
+            exit 1
+        fi
+    fi
+fi

@@ -1,0 +1,54 @@
+#!/usr/bin/env bash
+# Promote {{STAGE_BRANCH}} → {{PROD_BRANCH}}: open (or merge) the release PR.
+#
+#   bin/promote            # open the release PR, or show the open one
+#   bin/promote --merge    # merge it once CI is green
+#
+# Separate from bin/land because {{STAGE_BRANCH}} is persistent: land deletes the
+# branch it merges, which is right for a feature and wrong for the staging line.
+# Promote never passes --delete-branch.
+set -euo pipefail
+cd "$(dirname "$0")/.."
+
+stage="{{STAGE_BRANCH}}"
+prod="{{PROD_BRANCH}}"
+merge=false
+[ "${1:-}" = "--merge" ] && merge=true
+
+git fetch -q origin
+
+# Nothing to promote is a normal outcome, not a failure.
+ahead=$(git rev-list --count "origin/$prod..origin/$stage")
+[ "$ahead" -gt 0 ] || { echo "✓ $prod is up to date with $stage — nothing to promote"; exit 0; }
+echo "→ $stage is $ahead commit(s) ahead of $prod"
+
+if url=$(gh pr list --base "$prod" --head "$stage" --state open --json url -q '.[0].url' 2>/dev/null) && [ -n "$url" ]; then
+    echo "↻ release PR already open: $url"
+else
+    echo "→ opening release PR…"
+    notes=$(git log --oneline "origin/$prod..origin/$stage")
+    gh pr create --base "$prod" --head "$stage" \
+        --title "release: $stage → $prod ($ahead commits)" \
+        --body "Promoting $ahead commit(s) from \`$stage\`.
+
+$notes
+
+🤖 Generated with [Claude Code](https://claude.com/claude-code)"
+    url=$(gh pr list --base "$prod" --head "$stage" --state open --json url -q '.[0].url')
+fi
+
+$merge || { echo "→ review it, then: bin/promote --merge"; exit 0; }
+
+pr=$(gh pr list --base "$prod" --head "$stage" --state open --json number -q '.[0].number')
+echo "→ waiting for CI on PR #$pr…"
+if ! timeout 600 gh pr checks "$pr" --watch --interval 20 >/tmp/promote-ci.log 2>&1; then
+    echo "✗ checks did not pass (or timed out):"; tail -15 /tmp/promote-ci.log; exit 1
+fi
+
+{{DEPLOY_CHECK_BLOCK}}
+
+# No --delete-branch: $stage is persistent and carries on after the release.
+gh pr merge "$pr" --merge
+git checkout -q "$prod" && git pull -q --ff-only
+echo "✓ promoted $stage → $prod:"
+git log --oneline -1

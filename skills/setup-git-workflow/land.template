@@ -5,6 +5,7 @@
 #
 #   bin/land [<pr-number>]                        # merge into {{DEFAULT_BASE}} (default)
 #   bin/land --base {{EPIC_EXAMPLE}} [<pr-number>]  # epic slice → merge into the epic
+#   bin/land --no-checks [<pr-number>]            # merge a base that runs checks anyway
 #
 # Pass --base for epic/integration branches: the post-merge sync checks out that
 # branch, and PRs into it that carry no CI checks are merged without waiting.
@@ -12,15 +13,29 @@ set -euo pipefail
 cd "$(dirname "$0")/.."
 
 base="{{DEFAULT_BASE}}"
+no_checks_ok=false
 args=()
 while [ $# -gt 0 ]; do
     case "$1" in
         -b|--base) base="${2:?--base needs a branch}"; shift 2 ;;
         --base=*)  base="${1#*=}"; shift ;;
+        --no-checks) no_checks_ok=true; shift ;;
         *)         args+=("$1"); shift ;;
     esac
 done
 set -- "${args[@]+"${args[@]}"}"
+
+# Which bases run CI, from the setup answer (see {{ADR_REF}} / git-workflow.md).
+# "No checks reported" means opposite things either side of this line: on a base
+# that runs checks it can only mean CI failed to register — merging would gate on
+# nothing. On one that doesn't, it's simply the normal case, and waiting would
+# hang forever. Keep this list honest and land stays honest.
+base_runs_checks() {
+    case "$1" in
+        {{CHECKED_BASES}}) return 0 ;;
+        *) return 1 ;;
+    esac
+}
 
 pr="${1:-}"
 [ -n "$pr" ] || pr=$(gh pr view --json number -q .number 2>/dev/null || true)
@@ -31,7 +46,17 @@ if gh pr checks "$pr" >/tmp/land-ci.log 2>&1; then
     echo "✓ CI green"
 elif grep -q "no checks reported" /tmp/land-ci.log; then
     # {{NO_CHECKS_NOTE}}
-    echo "ℹ no CI checks on this PR — proceeding"
+    if $no_checks_ok; then
+        echo "ℹ no CI checks on this PR — proceeding (--no-checks)"
+    elif base_runs_checks "$base"; then
+        echo "✗ no checks reported on a PR into $base, which runs CI." >&2
+        echo "  CI never registered — merging now would gate on nothing." >&2
+        echo "  Check the workflow, re-run it, or override deliberately:" >&2
+        echo "    bin/land --no-checks $pr" >&2
+        exit 1
+    else
+        echo "ℹ no CI checks on PRs into $base — proceeding"
+    fi
 else
     echo "→ waiting for CI on PR #$pr…"
     if ! timeout 600 gh pr checks "$pr" --watch --interval 20 >/tmp/land-ci.log 2>&1; then

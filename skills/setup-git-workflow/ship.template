@@ -66,6 +66,18 @@ if $needs_branch; then
     git checkout -q -b "$branch"
 fi
 
+# Re-runnable: does this branch already have a PR? Settled *before* the push,
+# because the version block below needs to know — a re-run must leave VERSION
+# alone (see the snippet), and by the time we've pushed it's too late to stamp
+# the commit without rewriting it.
+if pr_url=$(gh pr view "$branch" --json url -q .url 2>/dev/null) && [ -n "$pr_url" ]; then
+    fresh_pr=false
+else
+    fresh_pr=true
+fi
+
+{{VERSION_PREDICT_BLOCK}}
+
 git add -A
 msg="$title"
 [ -n "$body" ] && msg="$title
@@ -75,18 +87,14 @@ printf '%s\n\nCo-Authored-By: Claude Opus 4.8 <noreply@anthropic.com>\n' "$msg" 
 
 git push -q -u origin "$branch"
 
-# Re-runnable: if a PR is already open for this branch, the push above updated
-# it; otherwise open one against the base branch.
-if url=$(gh pr view "$branch" --json url -q .url 2>/dev/null) && [ -n "$url" ]; then
-    echo "↻ updated existing PR: $url"
-    fresh_pr=false
-else
+if $fresh_pr; then
     gh pr create --base "$base" --head "$branch" --title "$title" --body "$body
 
 🤖 Generated with [Claude Code](https://claude.com/claude-code)"
-    fresh_pr=true
+else
+    echo "↻ updated existing PR: $pr_url"
 fi
 
-{{VERSION_BUMP_BLOCK}}
+{{VERSION_VERIFY_BLOCK}}
 
 gh pr view "$branch" --json url -q .url

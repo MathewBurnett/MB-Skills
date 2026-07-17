@@ -1,27 +1,61 @@
-# ── {{VERSION_BUMP_BLOCK}} — M.R.V.f only; delete for semver or no versioning ──
-# Version the PR: V is the PR number, which only exists now that the PR is open.
-# Amend it into the commit we just pushed rather than adding a follow-up: CI then
-# runs once, on the final SHA, so bin/land's `gh pr checks` gate is honest. A
-# [skip ci] follow-up would leave the head SHA with no checks at all — which
-# land reads as "no checks reported" and merges straight through.
+# ── {{VERSION_PREDICT_BLOCK}} — M.R.V.f only; delete for semver or no versioning ──
+# Version the PR *before* the first push, so the commit CI first sees already
+# carries the right number. V is the PR number, which doesn't exist yet — so
+# predict it: the next number is one past the newest numbered object in the repo.
 #
-# Only ever amends a PR this run just opened ($fresh_pr): a re-run pushes onto a
+# Issues and PRs share a single number sequence, so that's the newest of *either*
+# — a max over PRs alone guesses low the moment anyone files an issue. The REST
+# issues endpoint returns both (a PR is an issue with a pull_request field), so
+# one call sees the whole sequence. gh pr list would not.
+#
+# A guess can still lose a race: someone opens an issue or PR between here and
+# gh pr create. The verify block below catches that and corrects it.
+predicted=""
+if [ -x bin/version ] && $fresh_pr; then
+    # Empty repo (no issues, no PRs) → latest is empty → predict #1.
+    latest=$(gh api \
+        "repos/{owner}/{repo}/issues?state=all&sort=created&direction=desc&per_page=1" \
+        -q '.[0].number' 2>/dev/null || true)
+    case "$latest" in (*[!0-9]*) latest="" ;; esac
+    predicted=$(( ${latest:-0} + 1 ))
+    bin/version pr "$predicted" >/dev/null
+    echo "→ VERSION → $(bin/version show) (predicting PR #$predicted)"
+fi
+
+# ── {{VERSION_VERIFY_BLOCK}} — M.R.V.f only; delete for semver or no versioning ──
+# Confirm the prediction against the PR that actually opened. Right in the normal
+# case: nothing to do, the pushed commit is already correct, and CI runs once on
+# it. Wrong (someone took our number): fall back to stamping and amending, which
+# costs the second CI run we were trying to avoid but is never incorrect.
+#
+# Amend rather than adding a follow-up commit: a [skip ci] bump would leave the
+# head SHA with no checks at all, which bin/land reads as "no checks reported".
+# On a base that runs checks land now refuses that — but don't rely on it; keep
+# the head SHA honestly checked.
+#
+# Only ever touches a PR this run just opened ($fresh_pr): a re-run pushes onto a
 # branch someone may have reviewed, and its VERSION is already correct anyway.
 if [ -x bin/version ] && $fresh_pr; then
     pr=$(gh pr view "$branch" --json number -q .number)
-    bin/version pr "$pr" >/dev/null
-    if [ -n "$(git status --porcelain VERSION)" ]; then
-        ver=$(bin/version show)
-        git add VERSION
-        git commit -q --amend --no-edit
-        # --force-with-lease refuses if origin moved under us (someone pushed to
-        # the branch between our push and now) rather than clobbering their work.
-        if git push -q --force-with-lease; then
-            echo "✓ VERSION → $ver (amended into the commit)"
-        else
-            echo "✗ VERSION bumped to $ver but the branch moved — push it yourself:" >&2
-            echo "  git push --force-with-lease" >&2
-            exit 1
+    if [ "$pr" = "$predicted" ]; then
+        echo "✓ VERSION $(bin/version show) — predicted PR #$pr, one CI run"
+    else
+        bin/version pr "$pr" >/dev/null
+        # Guard the amend: if VERSION didn't actually change, amending would
+        # rewrite the SHA for nothing and trigger a second CI run.
+        if [ -n "$(git status --porcelain VERSION)" ]; then
+            ver=$(bin/version show)
+            git add VERSION
+            git commit -q --amend --no-edit
+            # --force-with-lease refuses if origin moved under us (someone pushed
+            # to the branch between our push and now) rather than clobbering it.
+            if git push -q --force-with-lease; then
+                echo "✓ VERSION → $ver (predicted #$predicted, got #$pr — amended)"
+            else
+                echo "✗ VERSION bumped to $ver but the branch moved — push it yourself:" >&2
+                echo "  git push --force-with-lease" >&2
+                exit 1
+            fi
         fi
     fi
 fi

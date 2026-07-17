@@ -42,14 +42,14 @@ Summarise what you found, then walk the three decisions **in order**, waiting fo
 
 **Section B — Epic branches.** Explainer: an epic is a long feature built from several PRs that shouldn't reach the base branch half-finished. Slices ship into `epic/<slug>` with `--base epic/<slug>`; the epic lands into the base as one PR. `--base` is already in both scripts, so this asks whether to *document* the epic convention and which prefix to use (default `epic/`).
 
-**Section C — CI on the base branches.** Explainer: `bin/land` waits for `gh pr checks` to go green, but PRs into a `stage` or epic branch often have no checks configured — so land treats "no checks reported" as proceed rather than hanging. Confirm which branches actually run checks, and record it. Ask; don't run `gh api` to change branch protection.
+**Section C — CI on the base branches.** Explainer: `bin/land` waits for `gh pr checks` to go green, but PRs into a `stage` or epic branch often have no checks configured — so land can't simply wait, or those merges hang forever. Instead it splits on the base: "no checks reported" on a base that *does* run CI means CI failed to register, and land refuses (`--no-checks` overrides); on one that doesn't, it proceeds. Confirm which branches actually run checks — the answer fills `{{CHECKED_BASES}}`, so a wrong answer here either blocks every land or silently un-gates one. Ask; don't run `gh api` to change branch protection.
 
 **Section D — Versioning.** Explainer: a version is only useful if the running app reports the same string the repo does, so `VERSION` is the single source of truth and everything else reads it. Two schemes:
 
 - **M.R.V.f** (default) — major.revision.PR.fix. `V` is the PR number, so a deployed version names the PR that shipped it, and `R` maps onto closing an epic. Right for an app you deploy.
 - **Semver** — for anything consumers depend on, where the number is a compatibility promise.
 
-The choice changes `ship`: M.R.V.f stamps `V` automatically (the PR number exists only once the PR is open), while semver is a judgement call `ship` must never make for you.
+The choice changes `ship`: M.R.V.f stamps `V` automatically (predicting the PR number, then confirming it once the PR is open), while semver is a judgement call `ship` must never make for you.
 
 **Section E — Health endpoint.** Explainer: `GET /health` returns 200 and `{"status":"ok","version":"…"}` — no auth, no database. It makes a deploy verifiable from outside (`curl <host>/health`) and tells you *which* version is actually live. Confirm the path is free, and ask whether existing overlapping endpoints should fold into it. Read [health-endpoint.md](health-endpoint.md) before writing any of it.
 
@@ -65,7 +65,7 @@ Fill the templates and write the files:
 - [land.template](land.template) → `bin/land`, `chmod +x`
 - [promote.template](promote.template) → `bin/promote`, `chmod +x` — **stage-promotion topology only**
 - [version-mrvf.template](version-mrvf.template) or [version-semver.template](version-semver.template) → `bin/version`, `chmod +x`; seed `VERSION`
-- [version-bump.snippet](version-bump.snippet) → splices into ship's `{{VERSION_BUMP_BLOCK}}` — **M.R.V.f only**; for semver or no versioning, delete the placeholder line
+- [version-bump.snippet](version-bump.snippet) → two blocks, spliced into ship's `{{VERSION_PREDICT_BLOCK}}` (before the commit) and `{{VERSION_VERIFY_BLOCK}}` (after the PR opens) — **M.R.V.f only**; for semver or no versioning, delete both placeholder lines. They're a pair: the predict block sets `$predicted`, which the verify block reads.
 - The health route, its config wiring, and its test — per [health-endpoint.md](health-endpoint.md)
 - [git-workflow.md](git-workflow.md) → `docs/agents/git-workflow.md`
 

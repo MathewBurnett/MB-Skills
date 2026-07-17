@@ -60,11 +60,16 @@ release ships together, so a bad change blocks the ones behind it. Promote often
 `VERSION` is the single source of truth: **[M.R.V.f | semver]**. [Legend, or a link
 to the ADR.]
 
-[M.R.V.f only:] `bin/ship` stamps `V` with the PR number automatically — the number
-only exists once the PR is open, so ship bumps it *after* opening and amends it into
-the same commit. That keeps CI running once, on the final SHA, which matters:
-`bin/land` trusts `gh pr checks`, and a `[skip ci]` bump commit would leave the head
-SHA with no checks for land to read — merging straight through. Don't reintroduce one.
+[M.R.V.f only:] `bin/ship` stamps `V` with the PR number automatically. The number
+doesn't exist before the PR opens, so ship predicts it — one past the newest issue
+or PR, which share a number sequence — stamps it before the first push, then checks
+the real number once the PR is open and amends only if the guess lost a race. Normal
+case: CI runs once, on a commit that already carries the right version.
+
+What ship must never do is bump in a follow-up `[skip ci]` commit. That leaves the
+head SHA with *no checks at all*, and `bin/land` trusts `gh pr checks` — it would
+read "no checks reported" and merge straight through, gating on nothing. Don't
+reintroduce one.
 
 Bump the rest by hand: `bin/version epic` when an epic lands, `bin/version major` for
 a milestone, `bin/version fix` for a commit with no PR.
@@ -86,9 +91,15 @@ that shipped the running code.
 
 ## CI
 
-[Which branches run checks, from the setup answer. This is load-bearing: `bin/land`
-treats "no checks reported" as proceed, so a base branch with no configured checks
-merges without waiting. Name the branches that do and don't have them.]
+[Which branches run checks, from the setup answer. This is load-bearing, and it's
+compiled into `bin/land`'s `base_runs_checks` — keep the two in step. "No checks
+reported" means opposite things either side of the line: on a base that runs CI it
+can only mean CI failed to register, so land refuses; on one that doesn't, it's
+normal, so land proceeds rather than hanging forever. Name both sets.]
 
-- PRs into `[main]`: [checks run — land waits for green]
+- PRs into `[main]`: [checks run — land waits for green, and refuses if none report]
 - PRs into `[stage | epic/*]`: [no checks — land proceeds immediately]
+
+`bin/land --no-checks <pr>` overrides the refusal, for when CI is genuinely and
+knowingly absent on a base that normally runs it. Deliberate and visible, once —
+if you're typing it every time, `base_runs_checks` is wrong, so fix that instead.

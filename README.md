@@ -50,7 +50,13 @@ A few things these scripts get right that are easy to get wrong:
 
 **ship never merges.** The ship/land split exists so review has somewhere to happen. Every generated variant preserves it.
 
-**The version bump is amended, not appended.** A PR number only exists once the PR is open, so `ship` opens it, stamps `V`, and amends the change into the same commit. The obvious alternative — a follow-up `chore: version [skip ci]` commit — quietly breaks the safety gate: with `[skip ci]` the head SHA has *no check runs*, `gh pr checks` reports "no checks reported", and `land` reads that as permission to merge. CI would stop gating anything. Amending keeps one commit and one honest CI run on the final SHA.
+**The PR number is predicted, then verified.** `V` is the PR number, which doesn't exist until the PR is open — but stamping it afterwards means rewriting the commit CI has already started on. So `ship` guesses first: one past the newest numbered object, stamped before the first push. Once the PR opens it compares, and amends only if the guess was wrong. Normally that's one commit and one CI run, on a SHA that carried the right version from the start; when it's wrong it degrades to rewriting, which is merely the old cost.
+
+The guess is *one past the newest issue or PR*, not the newest PR. GitHub draws both from a single number sequence, so `gh pr list` alone reads low the moment anyone files an issue — the REST issues endpoint returns both and is the only one that sees the whole sequence.
+
+**What ship must never do is append a `[skip ci]` bump.** It looks like the obvious fix and quietly breaks the safety gate: with `[skip ci]` the head SHA has *no check runs*, `gh pr checks` reports "no checks reported", and `land` reads that as permission to merge. CI stops gating anything.
+
+**"No checks reported" means opposite things on different bases.** On `main`, where CI runs, it can only mean the workflow failed to register — so `land` refuses, and `--no-checks` is there for the deliberate exception. On a `stage` or epic branch with no checks configured, it's simply the normal case, and refusing would mean typing the override on every land until it stopped carrying meaning. `land` splits on the base it was given; the setup skill asks which branches run checks precisely so it can.
 
 **Force-push only onto a PR ship just opened.** A re-run pushes onto a branch someone may already have reviewed, and its version is already correct — so there's nothing to rewrite. `--force-with-lease` refuses if the remote moved.
 

@@ -7,9 +7,11 @@
 #   V version   the PR that ships the work — set at "ship it" time
 #   f fix       a commit with no PR
 #
-# A PR number only exists once the PR is open, so bin/ship bumps V *after*
-# opening it and amends the change into the same commit. Run this by hand only
-# for the R/M/f bumps, or when shipping outside bin/ship.
+# A PR number doesn't exist until the PR is open, so bin/ship predicts it (one
+# past the newest issue-or-PR — they share a number sequence), stamps V before
+# the first push, then confirms against the real number once the PR opens and
+# amends only if the guess lost a race. Run this by hand only for the R/M/f
+# bumps, or when shipping outside bin/ship.
 #
 # Usage:
 #   bin/version show           print the current version

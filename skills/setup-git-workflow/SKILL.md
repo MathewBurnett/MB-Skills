@@ -10,12 +10,12 @@ Scaffold the shipping path a repo's agents and humans both use:
 
 - **`bin/ship`** — verify, branch, commit, push, open a PR. Never merges.
 - **`bin/land`** — merge an open PR once CI is green, then sync the base.
-- **`bin/hooks/pre-push`** — a push guard: blocks a non-`ship` push to a branch that builds CI (a base that runs checks, or a feature branch whose PR targets one), so a bare `git push` can't skip verify + version-stamping and cost the PR a second CI run. Branches that don't build are let through.
+- **`bin/hooks/pre-push`** — a push guard: blocks a non-`ship` push to a persistent deploy branch, or to a feature branch whose PR runs checks, so a bare `git push` can't skip verify + version-stamping and cost the PR a second CI run. A branch that isn't triggering CI yet is let through.
 - **`bin/version`** + `VERSION` — the version the running app reports.
 - **`GET /health`** — 200 + `{status, version}`, so a deploy is checkable from outside.
 - **`docs/agents/git-workflow.md`** — the **topology**: which branch is the base, and when to pass `--base`.
 
-The split is the point: `ship` stops at the PR so review happens; `land` is the deliberate second act. The push guard keeps that split honest — it stops a stray `git push` from updating a CI-building PR behind ship's back, and with it the verify and version-stamping that make the PR pass CI on the first run. It gates on the same checked-base set as `land`, so the two agree on what runs CI. Preserve both in every variant you generate.
+The split is the point: `ship` stops at the PR so review happens; `land` is the deliberate second act. The push guard keeps that split honest — it stops a stray `git push` from reaching a deploy branch or re-running a checks PR behind ship's back, and with it the verify and version-stamping that make the PR pass CI on the first run. It reuses `ship`'s own sets (the persistent branches, and `land`'s checked bases), so guard and merge agree on what runs CI. Preserve both in every variant you generate.
 
 These join up: `bin/version` writes `VERSION`, `ship` stamps it with the PR number, and `/health` reports it — so `curl <host>/health` answers "which PR is live?" from outside the box.
 
@@ -44,7 +44,12 @@ Summarise what you found, then walk the three decisions **in order**, waiting fo
 
 **Section B — Epic branches.** Explainer: an epic is a long feature built from several PRs that shouldn't reach the base branch half-finished. Slices ship into `epic/<slug>` with `--base epic/<slug>`; the epic lands into the base as one PR. `--base` is already in both scripts, so this asks whether to *document* the epic convention and which prefix to use (default `epic/`).
 
-**Section C — CI on the base branches.** Explainer: `bin/land` waits for `gh pr checks` to go green, but PRs into a `stage` or epic branch often have no checks configured — so land can't simply wait, or those merges hang forever. Instead it splits on the base: "no checks reported" on a base that *does* run CI means CI failed to register, and land refuses (`--no-checks` overrides); on one that doesn't, it proceeds. Confirm which branches actually run checks — the answer fills `{{CHECKED_BASES}}`, so a wrong answer here either blocks every land or silently un-gates one. Ask; don't run `gh api` to change branch protection.
+**Section C — CI on the base branches.** Two tiers, and they're not the same set:
+
+- **Which bases run PR *checks*** (lint/tests/verify on a `pull_request`) — `bin/land` waits for these to go green, and the push guard blocks a stray push that would re-run them. This fills `{{CHECKED_BASES}}`. Slices usually belong here: an epic slice should pass tests before it lands into the epic, so `epic/*` typically joins `main`. What often *doesn't* run PR checks is a `stage` promotion, which is a batch merge.
+- **Which bases *build* on merge** (the heavy container/deploy job on a push to the branch) — typically just `main` and `stage`. This isn't a `land` concern (it happens after merge), but it's why the guard blocks a direct push to those branches: reuse `{{PROTECTED_BRANCHES}}`, the persistent-branch set, so every deploy line is covered even when it runs no PR checks.
+
+Explainer for the checks tier: `bin/land` waits on `gh pr checks`, but a base with no checks configured would hang it forever — so land splits on the base. "No checks reported" on a base that *does* run CI means CI failed to register, and land refuses (`--no-checks` overrides); on one that doesn't, it proceeds. A wrong `{{CHECKED_BASES}}` either blocks every land or silently un-gates one. Ask which bases run checks; don't run `gh api` to change branch protection.
 
 **Section D — Versioning.** Explainer: a version is only useful if the running app reports the same string the repo does, so `VERSION` is the single source of truth and everything else reads it. Two schemes:
 
@@ -65,7 +70,7 @@ Fill the templates and write the files:
 
 - [ship.template](ship.template) → `bin/ship`, `chmod +x`
 - [land.template](land.template) → `bin/land`, `chmod +x`
-- [pre-push.template](pre-push.template) → `bin/hooks/pre-push`, `chmod +x`; then `git config core.hooksPath bin/hooks` — unless the Explore step found an existing hooks path to reconcile first. Fill `{{CHECKED_BASES}}` with the **same** value as `bin/land` (Section C) — the guard and land must agree on which bases run CI. `ship` already exports the `GIT_SHIP=1` sentinel the hook waits for. A fresh clone re-runs the one `git config` line, so note it in `git-workflow.md`.
+- [pre-push.template](pre-push.template) → `bin/hooks/pre-push`, `chmod +x`; then `git config core.hooksPath bin/hooks` — unless the Explore step found an existing hooks path to reconcile first. It reuses three sets you've already fixed: `{{CHECKED_BASES}}` (same value as `bin/land`), `{{PROTECTED_BRANCHES}}` and `{{DEFAULT_BASE}}` (same as `bin/ship`) — no new placeholder, but all three must match their other use. `ship` already exports the `GIT_SHIP=1` sentinel the hook waits for. A fresh clone re-runs the one `git config` line, so note it in `git-workflow.md`.
 - [promote.template](promote.template) → `bin/promote`, `chmod +x` — **stage-promotion topology only**
 - [version-mrvf.template](version-mrvf.template) or [version-semver.template](version-semver.template) → `bin/version`, `chmod +x`; seed `VERSION`
 - [version-bump.snippet](version-bump.snippet) → two blocks, spliced into ship's `{{VERSION_PREDICT_BLOCK}}` (before the commit) and `{{VERSION_VERIFY_BLOCK}}` (after the PR opens) — **M.R.V.f only**; for semver or no versioning, delete both placeholder lines. They're a pair: the predict block sets `$predicted`, which the verify block reads.

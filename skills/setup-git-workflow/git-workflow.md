@@ -25,16 +25,22 @@ deliberate merge. Branch names are derived from the title: `feat: add export` �
 ### Push guard
 
 A `pre-push` hook (`bin/hooks/pre-push`, wired in via `core.hooksPath bin/hooks`)
-blocks a non-`ship` push **to a branch that builds CI** — a base that runs checks
-(`{{CHECKED_BASES}}`), or a feature branch whose open PR targets one. The aim is a
-**one-run PR**: `ship` stamps `VERSION` and runs verify *before* it pushes, so CI
-runs once, green, on a commit that's already right. A bare `git push` skips that
-and costs a second CI run — or a red one. `ship` sets `GIT_SHIP=1` so its own
-pushes pass; everything else that would build CI is stopped with a reminder.
+stops two pushes from happening behind `ship`'s back:
 
-A push that *wouldn't* build — a feature branch with no PR yet, or a PR into a base
-that runs no CI (e.g. an epic) — is let straight through. The guard gates on the
-same checked-base set as `bin/land`; keep them in step.
+1. **A direct push to a persistent deploy branch** (`{{PROTECTED_BRANCHES}}`) —
+   those build and ship on merge, so nothing reaches them except a reviewed PR.
+2. **A push to a feature branch whose open PR runs checks** (base in
+   `{{CHECKED_BASES}}`) — it re-runs that PR's CI on an unstamped, unverified
+   commit.
+
+The aim is a **one-run PR**: `ship` stamps `VERSION` and runs verify *before* it
+pushes, so CI runs once, green, on a commit that's already right. A bare
+`git push` skips that and costs a second CI run — or a red one. `ship` sets
+`GIT_SHIP=1` so its own pushes pass; everything else that would trigger CI is
+stopped with a reminder.
+
+A push that *wouldn't* trigger CI — a feature branch with no PR yet, or a PR into
+a base that runs no checks — is let straight through.
 
 ```bash
 git push --no-verify    # deliberate escape hatch, for the rare genuine case
@@ -115,14 +121,25 @@ that shipped the running code.
 
 ## CI
 
-[Which branches run checks, from the setup answer. This is load-bearing, and it's
-compiled into `bin/land`'s `base_runs_checks` — keep the two in step. "No checks
-reported" means opposite things either side of the line: on a base that runs CI it
-can only mean CI failed to register, so land refuses; on one that doesn't, it's
-normal, so land proceeds rather than hanging forever. Name both sets.]
+Two tiers — **checks** on PRs, and a **container build** on merge — and they're
+different sets:
 
-- PRs into `[main]`: [checks run — land waits for green, and refuses if none report]
-- PRs into `[stage | epic/*]`: [no checks — land proceeds immediately]
+- **PR checks** (lint/tests/verify): run on PRs into `[main, epic/*]`. `bin/land`
+  waits for these; the push guard blocks a stray push that would re-run them.
+  Slices run checks so an epic slice is tested before it lands. A `[stage]`
+  promotion is a batch merge and runs **no** PR checks.
+- **Container build** (the heavy deploy job on a push to the branch): only
+  `[main, stage]`. It's not a `land` concern — it happens after merge — but it's
+  why the guard refuses a *direct* push to those branches.
+
+The checks set is load-bearing: it's compiled into `bin/land`'s `base_runs_checks`
+and the push guard's `runs_checks` — keep all three in step. "No checks reported"
+means opposite things either side of the line: on a base that runs checks it can
+only mean CI failed to register, so land refuses; on one that doesn't, it's normal,
+so land proceeds rather than hanging forever.
+
+- PRs into `[main, epic/*]`: [checks run — land waits for green, and refuses if none report]
+- PRs into `[stage]`: [no checks — land proceeds immediately]
 
 `bin/land --no-checks <pr>` overrides the refusal, for when CI is genuinely and
 knowingly absent on a base that normally runs it. Deliberate and visible, once —

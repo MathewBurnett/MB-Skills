@@ -1,0 +1,55 @@
+#!/usr/bin/env bash
+# Push guard — keep ship the only path onto a branch that triggers CI.
+#
+# Two pushes must never happen behind ship's back:
+#   1. A direct push to a persistent branch (main/stage). Those are the deploy
+#      lines — a push there builds and ships a container — and nothing should
+#      reach them except a reviewed PR that ship raised and land merged.
+#   2. A push to a feature branch whose open PR runs checks. It re-runs that PR's
+#      CI on an unstamped, unverified commit, costing the one-run PR a second run.
+#      ship stamps VERSION and runs verify *before* it pushes; a bare push skips
+#      both.
+#
+# ship exports GIT_SHIP=1, so its own pushes always pass. A feature branch with no
+# PR, or a PR into a base that runs no checks, isn't triggering CI yet — it passes.
+[ -n "${GIT_SHIP:-}" ] && exit 0
+
+# Bases whose PRs run checks — the same set bin/land waits on ({{ADR_REF}}).
+# Keep it in step with land's base_runs_checks, or guard and merge disagree.
+runs_checks() {
+    case "$1" in
+        {{CHECKED_BASES}}) return 0 ;;
+        *) return 1 ;;
+    esac
+}
+
+block() {
+    cat >&2 <<EOF
+✋ Push blocked — $1. This repo ships through bin/ship.
+
+   The goal is a one-run PR: ship stamps VERSION with the PR number and runs
+   verify first, so CI runs once, green, on a commit that's already correct.
+   Pushing directly here skips that — a wasted CI run, or a red one.
+
+   Ship it:                           bin/ship "feat: …"
+   Genuinely need to push past ship:  git push --no-verify
+EOF
+    exit 1
+}
+
+# stdin gives one line per pushed ref: <local ref> <local sha> <remote ref> <remote sha>.
+while read -r _ _ remote_ref _; do
+    [ -n "$remote_ref" ] || continue
+    branch=${remote_ref#refs/heads/}
+
+    # 1. Direct push to a persistent deploy branch (main/stage/prod).
+    for persistent in {{PROTECTED_BRANCHES}} {{DEFAULT_BASE}}; do
+        [ "$branch" = "$persistent" ] && block "\"$branch\" is a persistent deploy branch"
+    done
+
+    # 2. Feature branch whose open PR runs checks — the push re-runs them.
+    # No PR (or gh unavailable) → empty base → not guarded, which is the point.
+    base=$(gh pr view "$branch" --json baseRefName -q .baseRefName </dev/null 2>/dev/null || true)
+    [ -n "$base" ] && runs_checks "$base" && block "the PR $branch → $base runs CI checks"
+done
+exit 0

@@ -11,6 +11,14 @@
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
+# The pre-push hook (bin/hooks/pre-push) blocks a non-ship push to a persistent
+# deploy branch, or to a feature branch whose PR runs checks — so a direct
+# `git push` can't quietly skip verify + version-stamping and cost a second CI
+# run. This is the one path allowed through: set here, once, so both pushes below
+# (the initial push and the version-verify amend, which re-pushes a branch that by
+# then has an open PR) carry it.
+export GIT_SHIP=1
+
 # --base/-b <branch> may appear anywhere; the rest are positional title/body.
 base="{{DEFAULT_BASE}}"
 args=()

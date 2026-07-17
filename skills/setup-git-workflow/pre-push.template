@@ -1,0 +1,22 @@
+#!/usr/bin/env bash
+# Push guard: this repo ships through bin/ship, and ship is the only push path
+# that keeps a PR to one CI run. ship stamps VERSION with the predicted PR number
+# and runs lint + verify *before* it pushes, so the first commit CI sees is
+# already correct and green. A bare `git push` skips all of that — CI runs on an
+# unstamped, unverified commit, and the fix costs a second run (or a red one).
+#
+# ship exports GIT_SHIP=1 before it pushes; this hook only speaks up when that's
+# absent — i.e. someone (often an agent) is pushing around ship.
+[ -n "${GIT_SHIP:-}" ] && exit 0
+
+cat >&2 <<'EOF'
+✋ Direct push blocked — this repo ships through bin/ship.
+
+   The goal is a one-run PR: bin/ship stamps VERSION with the PR number and runs
+   verify first, so CI runs once, green, on a commit that's already correct.
+   Pushing directly skips that and usually costs a second CI run — or a red one.
+
+   Ship it:                              bin/ship "feat: …"
+   Genuinely need to push past ship:     git push --no-verify
+EOF
+exit 1

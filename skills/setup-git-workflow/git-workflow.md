@@ -22,6 +22,25 @@ bin/land [<pr>]                  # merge once CI is green, then sync {{DEFAULT_B
 deliberate merge. Branch names are derived from the title: `feat: add export` →
 `feat/add-export`.
 
+### Push guard
+
+A `pre-push` hook (`bin/hooks/pre-push`, wired in via `core.hooksPath bin/hooks`)
+blocks any push that didn't come through `ship`. The aim is a **one-run PR**:
+`ship` stamps `VERSION` and runs verify *before* it pushes, so CI runs once, green,
+on a commit that's already right. A bare `git push` skips that and costs a second
+CI run — or a red one. `ship` sets `GIT_SHIP=1` so its own pushes pass; everything
+else is stopped with a reminder.
+
+```bash
+git push --no-verify    # deliberate escape hatch, for the rare genuine case
+```
+
+A fresh clone doesn't inherit `core.hooksPath`, so run this once after cloning:
+
+```bash
+git config core.hooksPath bin/hooks
+```
+
 ## Epic branches
 
 [Delete this section if epics aren't in use.]

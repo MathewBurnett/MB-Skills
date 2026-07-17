@@ -11,6 +11,12 @@
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
+# The pre-push hook (bin/hooks/pre-push) blocks any push that isn't ship's, so a
+# direct `git push` can't quietly skip verify + version-stamping. This is the one
+# path allowed through — set here, once, so both pushes below (the initial push
+# and the version-verify amend) carry it.
+export GIT_SHIP=1
+
 # --base/-b <branch> may appear anywhere; the rest are positional title/body.
 base="{{DEFAULT_BASE}}"
 args=()

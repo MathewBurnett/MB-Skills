@@ -25,11 +25,16 @@ deliberate merge. Branch names are derived from the title: `feat: add export` �
 ### Push guard
 
 A `pre-push` hook (`bin/hooks/pre-push`, wired in via `core.hooksPath bin/hooks`)
-blocks any push that didn't come through `ship`. The aim is a **one-run PR**:
-`ship` stamps `VERSION` and runs verify *before* it pushes, so CI runs once, green,
-on a commit that's already right. A bare `git push` skips that and costs a second
-CI run — or a red one. `ship` sets `GIT_SHIP=1` so its own pushes pass; everything
-else is stopped with a reminder.
+blocks a non-`ship` push **to a branch that builds CI** — a base that runs checks
+(`{{CHECKED_BASES}}`), or a feature branch whose open PR targets one. The aim is a
+**one-run PR**: `ship` stamps `VERSION` and runs verify *before* it pushes, so CI
+runs once, green, on a commit that's already right. A bare `git push` skips that
+and costs a second CI run — or a red one. `ship` sets `GIT_SHIP=1` so its own
+pushes pass; everything else that would build CI is stopped with a reminder.
+
+A push that *wouldn't* build — a feature branch with no PR yet, or a PR into a base
+that runs no CI (e.g. an epic) — is let straight through. The guard gates on the
+same checked-base set as `bin/land`; keep them in step.
 
 ```bash
 git push --no-verify    # deliberate escape hatch, for the rare genuine case

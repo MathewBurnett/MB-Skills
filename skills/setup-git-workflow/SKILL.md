@@ -10,12 +10,12 @@ Scaffold the shipping path a repo's agents and humans both use:
 
 - **`bin/ship`** — verify, branch, commit, push, open a PR. Never merges.
 - **`bin/land`** — merge an open PR once CI is green, then sync the base.
-- **`bin/hooks/pre-push`** — a push guard: blocks any push that didn't come through `ship`, so a bare `git push` can't skip verify + version-stamping and cost the PR a second CI run.
+- **`bin/hooks/pre-push`** — a push guard: blocks a non-`ship` push to a branch that builds CI (a base that runs checks, or a feature branch whose PR targets one), so a bare `git push` can't skip verify + version-stamping and cost the PR a second CI run. Branches that don't build are let through.
 - **`bin/version`** + `VERSION` — the version the running app reports.
 - **`GET /health`** — 200 + `{status, version}`, so a deploy is checkable from outside.
 - **`docs/agents/git-workflow.md`** — the **topology**: which branch is the base, and when to pass `--base`.
 
-The split is the point: `ship` stops at the PR so review happens; `land` is the deliberate second act. The push guard keeps that split honest — it stops a stray `git push` from opening or updating a PR behind ship's back, and with it the verify and version-stamping that make the PR pass CI on the first run. Preserve both in every variant you generate.
+The split is the point: `ship` stops at the PR so review happens; `land` is the deliberate second act. The push guard keeps that split honest — it stops a stray `git push` from updating a CI-building PR behind ship's back, and with it the verify and version-stamping that make the PR pass CI on the first run. It gates on the same checked-base set as `land`, so the two agree on what runs CI. Preserve both in every variant you generate.
 
 These join up: `bin/version` writes `VERSION`, `ship` stamps it with the PR number, and `/health` reports it — so `curl <host>/health` answers "which PR is live?" from outside the box.
 
@@ -65,7 +65,7 @@ Fill the templates and write the files:
 
 - [ship.template](ship.template) → `bin/ship`, `chmod +x`
 - [land.template](land.template) → `bin/land`, `chmod +x`
-- [pre-push.template](pre-push.template) → `bin/hooks/pre-push`, `chmod +x`; then `git config core.hooksPath bin/hooks` — unless the Explore step found an existing hooks path to reconcile first. `ship` already exports the `GIT_SHIP=1` sentinel the hook waits for; no placeholder to fill. A fresh clone re-runs the one `git config` line, so note it in `git-workflow.md`.
+- [pre-push.template](pre-push.template) → `bin/hooks/pre-push`, `chmod +x`; then `git config core.hooksPath bin/hooks` — unless the Explore step found an existing hooks path to reconcile first. Fill `{{CHECKED_BASES}}` with the **same** value as `bin/land` (Section C) — the guard and land must agree on which bases run CI. `ship` already exports the `GIT_SHIP=1` sentinel the hook waits for. A fresh clone re-runs the one `git config` line, so note it in `git-workflow.md`.
 - [promote.template](promote.template) → `bin/promote`, `chmod +x` — **stage-promotion topology only**
 - [version-mrvf.template](version-mrvf.template) or [version-semver.template](version-semver.template) → `bin/version`, `chmod +x`; seed `VERSION`
 - [version-bump.snippet](version-bump.snippet) → two blocks, spliced into ship's `{{VERSION_PREDICT_BLOCK}}` (before the commit) and `{{VERSION_VERIFY_BLOCK}}` (after the PR opens) — **M.R.V.f only**; for semver or no versioning, delete both placeholder lines. They're a pair: the predict block sets `$predicted`, which the verify block reads.
@@ -90,7 +90,7 @@ The scripts run against a live remote, so prove what you can before the user tru
 
 - `bash -n` every generated script.
 - `bin/ship` with no arguments — prints usage, exits 2.
-- The push guard, without touching the remote: `bin/hooks/pre-push </dev/null` exits 1 and prints the reminder; `GIT_SHIP=1 bin/hooks/pre-push </dev/null` exits 0 silently. Confirm `git config core.hooksPath` now reads `bin/hooks`.
+- The push guard, without touching the remote (feed it a ref line on stdin, as git does). A push to a checked base is blocked: `printf 'refs/heads/x 0 refs/heads/{{DEFAULT_BASE}} 0\n' | bin/hooks/pre-push` exits 1 with the reminder. A push under the ship sentinel passes: prefix the same with `GIT_SHIP=1` and it exits 0 silently. A feature branch with no PR passes (gh finds nothing): `printf 'refs/heads/x 0 refs/heads/throwaway-xyz 0\n' | bin/hooks/pre-push` exits 0. Confirm `git config core.hooksPath` now reads `bin/hooks`.
 - `bin/version show` — prints the seeded version.
 - Boot the app and `curl -fsS localhost:<port>/health` — assert on the **body**, not just the status. A catch-all serving the SPA shell returns a cheerful 200 of HTML, so a status-only check proves nothing.
 - Run the health test.

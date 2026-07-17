@@ -1,22 +1,51 @@
 #!/usr/bin/env bash
-# Push guard: this repo ships through bin/ship, and ship is the only push path
-# that keeps a PR to one CI run. ship stamps VERSION with the predicted PR number
-# and runs lint + verify *before* it pushes, so the first commit CI sees is
-# already correct and green. A bare `git push` skips all of that — CI runs on an
-# unstamped, unverified commit, and the fix costs a second run (or a red one).
+# Push guard — protect the one-run PR on branches that actually build CI.
 #
-# ship exports GIT_SHIP=1 before it pushes; this hook only speaks up when that's
-# absent — i.e. someone (often an agent) is pushing around ship.
+# ship stamps VERSION with the PR number and runs verify *before* it pushes, so
+# CI runs once, green, on a commit that's already correct. A bare `git push`
+# skips that — but it only costs anything when the push triggers a CI build: a
+# push straight to a base that runs checks, or to a feature branch whose open PR
+# targets one. Pushes to branches that don't build (no PR yet, or a PR into a
+# base that runs no CI, e.g. an epic) are let straight through — blocking those
+# is friction for no gain.
+#
+# ship exports GIT_SHIP=1, so its own pushes always pass. The checked-base set is
+# the same one bin/land gates on ({{ADR_REF}} / git-workflow.md) — keep the two
+# in step, or the guard and the merge disagree about what runs CI.
 [ -n "${GIT_SHIP:-}" ] && exit 0
 
-cat >&2 <<'EOF'
-✋ Direct push blocked — this repo ships through bin/ship.
+runs_checks() {
+    case "$1" in
+        {{CHECKED_BASES}}) return 0 ;;
+        *) return 1 ;;
+    esac
+}
 
-   The goal is a one-run PR: bin/ship stamps VERSION with the PR number and runs
-   verify first, so CI runs once, green, on a commit that's already correct.
-   Pushing directly skips that and usually costs a second CI run — or a red one.
+block() {
+    cat >&2 <<EOF
+✋ Push blocked — $1 builds CI, and this repo ships through bin/ship.
 
-   Ship it:                              bin/ship "feat: …"
-   Genuinely need to push past ship:     git push --no-verify
+   The goal is a one-run PR: ship stamps VERSION and runs verify first, so CI
+   runs once, green, on a commit that's already correct. Pushing directly here
+   skips that and costs a second CI run — or a red one.
+
+   Ship it:                           bin/ship "feat: …"
+   Genuinely need to push past ship:  git push --no-verify
 EOF
-exit 1
+    exit 1
+}
+
+# stdin gives one line per pushed ref: <local ref> <local sha> <remote ref> <remote sha>.
+while read -r _ _ remote_ref _; do
+    [ -n "$remote_ref" ] || continue
+    branch=${remote_ref#refs/heads/}
+
+    # A base that runs checks (main/stage): pushing to it directly builds CI.
+    runs_checks "$branch" && block "\"$branch\""
+
+    # A feature branch whose open PR targets such a base: the push rebuilds it.
+    # No PR (or gh unavailable) → empty base → not guarded, which is the point.
+    base=$(gh pr view "$branch" --json baseRefName -q .baseRefName </dev/null 2>/dev/null || true)
+    [ -n "$base" ] && runs_checks "$base" && block "the PR $branch → $base"
+done
+exit 0

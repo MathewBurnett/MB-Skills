@@ -1,0 +1,20 @@
+{
+  "name": "mb-skills",
+  "version": "0.1.0",
+  "description": "Agent skills for Claude Code — scaffolding a repo's shipping path: ship/land scripts, versioning, health endpoints, and branch topology.",
+  "author": {
+    "name": "Mathew Burnett"
+  },
+  "repository": "https://github.com/MathewBurnett/MB-Skills",
+  "license": "MIT",
+  "keywords": [
+    "engineering",
+    "skills",
+    "git-workflow",
+    "ci",
+    "release"
+  ],
+  "skills": [
+    "./skills/setup-git-workflow"
+  ]
+}

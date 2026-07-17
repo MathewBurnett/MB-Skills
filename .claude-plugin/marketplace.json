@@ -1,0 +1,21 @@
+{
+  "name": "mathewburnett",
+  "owner": {
+    "name": "Mathew Burnett"
+  },
+  "description": "Mathew Burnett's agent skills, as an installable Claude Code plugin.",
+  "plugins": [
+    {
+      "name": "mb-skills",
+      "source": "./",
+      "description": "Scaffolds a repo's shipping path — ship/land scripts, versioning, health endpoint, and branch topology.",
+      "category": "engineering",
+      "keywords": [
+        "engineering",
+        "skills",
+        "git-workflow",
+        "release"
+      ]
+    }
+  ]
+}

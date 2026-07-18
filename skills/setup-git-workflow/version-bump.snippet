@@ -28,10 +28,13 @@ fi
 # it. Wrong (someone took our number): fall back to stamping and amending, which
 # costs the second CI run we were trying to avoid but is never incorrect.
 #
-# Amend rather than adding a follow-up commit: a [skip ci] bump would leave the
-# head SHA with no checks at all, which bin/land reads as "no checks reported".
-# On a base that runs checks land now refuses that — but don't rely on it; keep
-# the head SHA honestly checked.
+# Correct in place when ship owns the head commit ($made_commit): amend rather
+# than adding a follow-up commit — a [skip ci] bump would leave the head SHA with
+# no checks at all, which bin/land reads as "no checks reported". On a base that
+# runs checks land now refuses that — but don't rely on it; keep the head SHA
+# honestly checked. On a prepared branch ship committed nothing of its own, so
+# the correction rides on its *own* commit instead — the author's commits are
+# never rewritten.
 #
 # Only ever touches a PR this run just opened ($fresh_pr): a re-run pushes onto a
 # branch someone may have reviewed, and its VERSION is already correct anyway.
@@ -41,16 +44,20 @@ if [ -x bin/version ] && $fresh_pr; then
         echo "✓ VERSION $(bin/version show) — predicted PR #$pr, one CI run"
     else
         bin/version pr "$pr" >/dev/null
-        # Guard the amend: if VERSION didn't actually change, amending would
-        # rewrite the SHA for nothing and trigger a second CI run.
+        # Guard the correction: if VERSION didn't actually change, re-committing
+        # would rewrite the SHA for nothing and trigger a second CI run.
         if [ -n "$(git status --porcelain VERSION)" ]; then
             ver=$(bin/version show)
             git add VERSION
-            git commit -q --amend --no-edit
+            if $made_commit; then
+                git commit -q --amend --no-edit
+            else
+                printf 'chore: stamp VERSION for #%s\n\nCo-Authored-By: Claude Opus 4.8 <noreply@anthropic.com>\n' "$pr" | git commit -q -F -
+            fi
             # --force-with-lease refuses if origin moved under us (someone pushed
             # to the branch between our push and now) rather than clobbering it.
             if git push -q --force-with-lease; then
-                echo "✓ VERSION → $ver (predicted #$predicted, got #$pr — amended)"
+                echo "✓ VERSION → $ver (predicted #$predicted, got #$pr)"
             else
                 echo "✗ VERSION bumped to $ver but the branch moved — push it yourself:" >&2
                 echo "  git push --force-with-lease" >&2

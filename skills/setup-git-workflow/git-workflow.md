@@ -49,11 +49,37 @@ a base that runs no checks — is let straight through.
 git push --no-verify    # deliberate escape hatch, for the rare genuine case
 ```
 
-A fresh clone doesn't inherit `core.hooksPath`, so run this once after cloning:
+The guard only runs once `core.hooksPath` points at `bin/hooks`, and that's
+per-checkout local config git never tracks — so a fresh clone starts with it
+**inactive**. Two activators turn it back on for you:
+
+- a Claude **`SessionStart`** hook (`.claude/settings.json`) — runs on every
+  session, no dependencies. On the session that first adds it, open `/hooks`
+  once (or restart) so the config is loaded; automatic on every checkout after.
+- an **install-time** step ([`postinstall` | `post-install-cmd` | `make setup`])
+  that rides on the install a fresh checkout runs anyway — covers humans and CI.
+
+If neither has run yet, activate it by hand — the one line both automate:
 
 ```bash
 git config core.hooksPath bin/hooks
 ```
+
+### Large files (git-lfs)
+
+[Delete this section if the repo has no large binaries.]
+
+This repo stores large binaries (images, media, datasets, model weights), so
+install [git-lfs](https://git-lfs.com) — it keeps them out of git history:
+
+```bash
+[brew install git-lfs | apt-get install git-lfs] && git lfs install
+```
+
+The push guard doesn't use git-lfs. But if you ever chain `git lfs pre-push`
+into `bin/hooks/pre-push`, guard that step so a machine without git-lfs warns
+instead of blocking every push — put `command -v git-lfs || exit 0` ahead of it.
+The hook's job is to never wedge a push.
 
 ## Epic branches
 

@@ -1,13 +1,19 @@
 #!/usr/bin/env bash
-# Raise a PR for the current working-tree changes.
+# Raise a PR for the current branch's work — however that work is presented.
 #
 #   bin/ship "feat: short title" ["longer body"]
 #   bin/ship --base {{EPIC_EXAMPLE}} "feat: short title" ["longer body"]
 #
-# Verifies, branches off the base if needed, commits, pushes, and opens a PR
-# against the base branch (default: {{DEFAULT_BASE}}; pass --base to target an
-# epic/integration branch instead). It deliberately does NOT merge — review
-# happens on the PR; run bin/land once you've decided to merge.
+# Ships the branch whether the work is uncommitted, already committed, or both:
+#   • uncommitted changes    → committed under the title, then shipped
+#   • commits already ahead   → shipped untouched; the title is optional and, if
+#     of the base (clean tree)  omitted, taken from the first commit ahead
+#   • both                   → the leftover working-tree changes commit on top
+#
+# Verifies, branches off the base if needed, commits (only when there's something
+# to commit), pushes, and opens a PR against the base branch (default:
+# {{DEFAULT_BASE}}; pass --base to target an epic/integration branch instead). It
+# deliberately does NOT merge — review happens on the PR; run bin/land to merge.
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
@@ -32,12 +38,44 @@ done
 set -- "${args[@]+"${args[@]}"}"
 
 title="${1:-}"; body="${2:-}"
-[ -n "$title" ] || { echo "usage: bin/ship [--base <branch>] \"<title>\" [\"<body>\"]" >&2; exit 2; }
-[ -n "$(git status --porcelain)" ] || { echo "✗ nothing to ship — working tree is clean" >&2; exit 1; }
+
+# Resolve the base to a real ref before counting anything against it: a local
+# branch wins, else the remote-tracking ref — so an epic base that only exists on
+# origin still counts its commits, instead of a bad comparison silently reporting
+# zero and wrongly rejecting a prepared branch.
+base_ref=$(git rev-parse --verify -q "refs/heads/$base" \
+    || git rev-parse --verify -q "refs/remotes/origin/$base" \
+    || true)
+
+# How is the work presented? Two independent signals, either one enough to ship:
+# a dirty working tree (uncommitted changes), or commits already ahead of the
+# base (a branch prepared with its own commits).
+if [ -n "$(git status --porcelain)" ]; then worktree_dirty=true; else worktree_dirty=false; fi
+ahead=0
+if [ -n "$base_ref" ]; then ahead=$(git rev-list --count "$base_ref..HEAD"); fi
+
+if ! $worktree_dirty && [ "$ahead" -eq 0 ]; then
+    echo "✗ nothing to ship — clean tree with no commits ahead of $base" >&2
+    exit 1
+fi
+
+# The title names the PR. On a prepared branch it may be omitted and taken from
+# the first commit ahead of the base; it's required only when there's no commit
+# to borrow it from (an uncommitted-only ship).
+if [ -z "$title" ]; then
+    if [ "$ahead" -gt 0 ]; then title=$(git log --reverse --format=%s "$base_ref..HEAD" | head -1); fi
+    [ -n "$title" ] || { echo "usage: bin/ship [--base <branch>] \"<title>\" [\"<body>\"]" >&2; exit 2; }
+fi
 
 # {{FORMATTER}} runs on the changed files only (not the whole tree) so adopting
-# it never produces a surprise reformat — files get formatted as they're touched.
-changed=$( { git diff --name-only HEAD -- {{SOURCE_DIR}}; git ls-files -o --exclude-standard -- {{SOURCE_DIR}}; } | grep -Ei '{{SOURCE_EXT}}' | sort -u || true)
+# it never produces a surprise reformat. "Changed" spans everything the branch
+# touches against the base — committed ($base_ref...HEAD) *and* working-tree — so
+# a prepared branch is linted just as thoroughly as an uncommitted one.
+changed=$( {
+    [ -n "$base_ref" ] && git diff --name-only "$base_ref...HEAD" -- {{SOURCE_DIR}};
+    git diff --name-only HEAD -- {{SOURCE_DIR}};
+    git ls-files -o --exclude-standard -- {{SOURCE_DIR}};
+} | grep -Ei '{{SOURCE_EXT}}' | sort -u || true)
 
 echo "→ formatting + linting…"
 if ! {
@@ -86,12 +124,26 @@ fi
 
 {{VERSION_PREDICT_BLOCK}}
 
-git add -A
-msg="$title"
-[ -n "$body" ] && msg="$title
+# Commit the work the way it's presented. A dirty tree commits under the title,
+# folding in the VERSION stamp the predict block just wrote (if any). A clean
+# prepared branch ships its commits *untouched* — the author's history is never
+# rewritten — and any VERSION stamp rides in on its own commit, so even a branch
+# that was already pushed takes a plain fast-forward. made_commit records which
+# happened, so the verify block below knows whether it may amend.
+made_commit=false
+if $worktree_dirty; then
+    git add -A
+    msg="$title"
+    [ -n "$body" ] && msg="$title
 
 $body"
-printf '%s\n\nCo-Authored-By: Claude Opus 4.8 <noreply@anthropic.com>\n' "$msg" | git commit -q -F -
+    printf '%s\n\nCo-Authored-By: Claude Opus 4.8 <noreply@anthropic.com>\n' "$msg" | git commit -q -F -
+    made_commit=true
+elif [ -n "${predicted:-}" ] && [ -n "$(git status --porcelain VERSION)" ]; then
+    git add VERSION
+    printf 'chore: stamp VERSION for #%s\n\nCo-Authored-By: Claude Opus 4.8 <noreply@anthropic.com>\n' "$predicted" | git commit -q -F -
+    made_commit=true
+fi
 
 git push -q -u origin "$branch"
 

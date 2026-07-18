@@ -94,7 +94,10 @@ Edit `CLAUDE.md` if it exists, else `AGENTS.md`, else ask which to create — ne
 The scripts run against a live remote, so prove what you can before the user trusts them, and report exactly what you ran:
 
 - `bash -n` every generated script.
-- `bin/ship` with no arguments — prints usage, exits 2.
+- `bin/ship` on a clean tree with no commits ahead of the base — prints the
+  nothing-to-ship guard, exits 1. On a dirty tree with no title (nothing to
+  borrow one from) it prints usage and exits 2. On a prepared branch (commits
+  ahead, clean tree) an omitted title is taken from the first commit.
 - The push guard, without touching the remote (feed it a ref line on stdin, as git does). A push to a checked base is blocked: `printf 'refs/heads/x 0 refs/heads/{{DEFAULT_BASE}} 0\n' | bin/hooks/pre-push` exits 1 with the reminder. A push under the ship sentinel passes: prefix the same with `GIT_SHIP=1` and it exits 0 silently. A feature branch with no PR passes (gh finds nothing): `printf 'refs/heads/x 0 refs/heads/throwaway-xyz 0\n' | bin/hooks/pre-push` exits 0. Confirm `git config core.hooksPath` now reads `bin/hooks`.
 - `bin/version show` — prints the seeded version.
 - Boot the app and `curl -fsS localhost:<port>/health` — assert on the **body**, not just the status. A catch-all serving the SPA shell returns a cheerful 200 of HTML, so a status-only check proves nothing.

@@ -18,9 +18,12 @@ bin/ship "feat: short title"     # verify → branch → commit → push → PR 
 bin/land [<pr>]                  # merge once CI is green, then sync {{DEFAULT_BASE}}
 ```
 
-`ship` stops at the PR on purpose — review happens there. `land` is the separate,
-deliberate merge. Branch names are derived from the title: `feat: add export` →
-`feat/add-export`.
+`ship` takes the work however it's presented: uncommitted changes it commits
+under the title, commits you already prepared on the branch it ships *untouched*
+(the title is optional then — borrowed from your first commit), and a mix of both
+it commits the leftovers on top. It stops at the PR on purpose — review happens
+there. `land` is the separate, deliberate merge. Branch names are derived from
+the title: `feat: add export` → `feat/add-export`.
 
 ### Push guard
 

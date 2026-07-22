@@ -1,6 +1,6 @@
 ---
 name: architecture-map
-description: Generate (or refresh) a new-developer architecture map — one self-contained HTML page: what the app is, its modules and patterns as diagrams, and how to run it. `--update` re-checks an existing map against the repo and refreshes only what drifted.
+description: Generate (or refresh) a new-developer architecture map — one self-contained HTML page covering what the app is, its modules and patterns as diagrams, and how to run it. `--update` re-checks an existing map against the repo and refreshes only what drifted.
 disable-model-invocation: true
 ---
 

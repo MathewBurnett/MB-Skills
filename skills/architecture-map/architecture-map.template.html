@@ -1,0 +1,259 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>{{APP_NAME}} — Architecture Map</title>
+<script src="https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.min.js"></script>
+<style>
+  /* Light is the default :root; dark is applied by prefers-color-scheme and by
+     the [data-theme] toggle. Fill these from the project's own tokens in step 2.
+     If the project has only one theme, honour it and drop the other set. */
+  :root{
+    --base:#f7f7fb; --surface:#ffffff; --surface-2:#eef0f8; --line:#e0e2ee;
+    --accent:#4653d8; --accent-2:#6248dc; --accent-soft:#4653d8;
+    --ink:#1a1830; --muted:#5b5876; --lavender:#5a4bcf;
+    --good:#16a34a; --warn:#b45309; --bad:#dc2626;
+  }
+  @media (prefers-color-scheme: dark){
+    :root:not([data-theme="light"]){
+      --base:#0b0726; --surface:#15103a; --surface-2:#1e1656; --line:#2c2270;
+      --accent:#536afd; --accent-2:#6248dc; --accent-soft:#8c9cfe;
+      --ink:#f5f4fb; --muted:#a89fd6; --lavender:#b1a4ee;
+      --good:#4ade80; --warn:#fbbf24; --bad:#f87171;
+    }
+  }
+  :root[data-theme="dark"]{
+    --base:#0b0726; --surface:#15103a; --surface-2:#1e1656; --line:#2c2270;
+    --accent:#536afd; --accent-2:#6248dc; --accent-soft:#8c9cfe;
+    --ink:#f5f4fb; --muted:#a89fd6; --lavender:#b1a4ee;
+    --good:#4ade80; --warn:#fbbf24; --bad:#f87171;
+  }
+  *{box-sizing:border-box}
+  html{scroll-behavior:smooth}
+  body{
+    margin:0; background:var(--base); color:var(--ink);
+    font-family:ui-sans-serif,system-ui,-apple-system,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+    line-height:1.6; font-size:15px;
+  }
+  .layout{display:grid; grid-template-columns:260px 1fr; min-height:100vh}
+  /* sidebar */
+  nav.side{
+    position:sticky; top:0; align-self:start; height:100vh; overflow-y:auto;
+    background:var(--surface); border-right:1px solid var(--line); padding:24px 18px;
+  }
+  nav.side .brand{font-weight:700; font-size:18px; letter-spacing:.3px; margin-bottom:4px}
+  nav.side .brand span{color:var(--accent-soft)}
+  nav.side .sub{color:var(--muted); font-size:12px; margin-bottom:22px}
+  nav.side a{
+    display:block; color:var(--muted); text-decoration:none; padding:7px 12px;
+    border-radius:8px; font-size:13.5px; margin:2px 0;
+  }
+  nav.side a:hover{background:var(--surface-2); color:var(--ink)}
+  nav.side a.lead{margin-top:16px; color:var(--lavender); font-weight:600; font-size:12px; text-transform:uppercase; letter-spacing:.6px; pointer-events:none}
+  .theme-toggle{
+    margin-top:22px; width:100%; cursor:pointer; color:var(--muted); background:var(--surface-2);
+    border:1px solid var(--line); border-radius:8px; padding:7px 12px; font-size:12.5px; text-align:left;
+  }
+  .theme-toggle:hover{color:var(--ink)}
+  /* main */
+  main{padding:48px 56px; max-width:1100px}
+  h1{font-size:34px; margin:0 0 6px; letter-spacing:.3px}
+  .lede{color:var(--muted); font-size:16px; margin:0 0 8px}
+  .meta{color:var(--muted); font-size:12.5px; margin-bottom:36px}
+  h2{font-size:23px; margin:54px 0 6px; padding-top:14px; border-top:1px solid var(--line)}
+  h2:first-of-type{border-top:none}
+  h3{font-size:17px; margin:28px 0 8px; color:var(--lavender)}
+  p{margin:10px 0}
+  code{background:var(--surface-2); padding:1.5px 6px; border-radius:5px; font-size:13px; color:var(--accent-soft); font-family:ui-monospace,SFMono-Regular,Menlo,monospace}
+  a.inl{color:var(--accent-soft)}
+  .card{
+    background:var(--surface); border:1px solid var(--line); border-radius:14px;
+    padding:22px 26px; margin:18px 0;
+  }
+  .diagram{background:var(--surface); border:1px solid var(--line); border-radius:14px; padding:20px; margin:18px 0; overflow-x:auto}
+  .mermaid{display:flex; justify-content:center}
+  .grid2{display:grid; grid-template-columns:1fr 1fr; gap:16px}
+  @media(max-width:900px){.grid2{grid-template-columns:1fr} .layout{grid-template-columns:1fr} nav.side{display:none}}
+  table{border-collapse:collapse; width:100%; margin:14px 0; font-size:13.5px}
+  th,td{text-align:left; padding:9px 12px; border-bottom:1px solid var(--line); vertical-align:top}
+  th{color:var(--lavender); font-weight:600; font-size:12px; text-transform:uppercase; letter-spacing:.5px}
+  td code{white-space:nowrap}
+  .pill{display:inline-block; padding:2px 9px; border-radius:999px; font-size:11.5px; font-weight:600; border:1px solid var(--line); color:var(--accent-soft)}
+  ul.tight{margin:8px 0; padding-left:20px}
+  ul.tight li{margin:5px 0}
+  .key{color:var(--lavender); font-weight:600}
+  .callout{border-left:3px solid var(--accent); background:var(--surface-2); padding:12px 16px; border-radius:0 10px 10px 0; margin:16px 0; font-size:14px}
+  .callout .lbl{color:var(--accent-soft); font-weight:700; font-size:12px; text-transform:uppercase; letter-spacing:.5px; display:block; margin-bottom:3px}
+  footer{color:var(--muted); font-size:12.5px; margin-top:60px; padding-top:18px; border-top:1px solid var(--line)}
+</style>
+</head>
+<body>
+<!-- PROVENANCE — kept machine-readable for `--update`. Stamp with the real values in step 3. -->
+<!-- architecture-map | generated: {{ISO_DATE}} | commit: {{GIT_SHA}} | sources: {{SOURCE_PATHS}} -->
+
+<div class="layout">
+  <nav class="side">
+    <div class="brand">{{APP_NAME}}<span>·</span>map</div>
+    <div class="sub">Architecture for new developers</div>
+    <a href="#overview">Overview</a>
+    <a class="lead">Diagrams</a>
+    <!-- FILL: one nav link per numbered diagram section you add below -->
+    <a href="#modules">① Modules (data model)</a>
+    <a class="lead">Reference</a>
+    <a href="#layers">Where logic lives</a>
+    <a href="#lifecycle">A request, end-to-end</a>
+    <a href="#seams">Key seams</a>
+    <a href="#start">Where to start</a>
+    <button class="theme-toggle" id="themeToggle">◐ Toggle theme</button>
+  </nav>
+
+  <main>
+    <h1>{{APP_NAME}} — Architecture Map</h1>
+    <p class="lede">{{ONE_LINER — one sentence: what this app/library is and does}}</p>
+    <p class="meta">Onboarding reference · {{STACK}} · generated for new developers</p>
+
+    <!-- ===================== Q1: WHAT IS THIS? ===================== -->
+    <section id="overview">
+      <h2>Overview</h2>
+      <div class="card">
+        <p><span class="key">One sentence:</span> {{The load-bearing description}}</p>
+        <ul class="tight">
+          <!-- FILL: the 4–6 facts a newcomer must hold — stack, actors, where logic
+               lives, the one scoping/tenancy rule, where data lives, what the tests are -->
+          <li><span class="key">Fact.</span> …</li>
+        </ul>
+        <p style="margin-bottom:0"><span class="key">Read next:</span> {{point at the sources of truth — CONTEXT.md, docs/adr/, README}}</p>
+      </div>
+
+      <div class="diagram">
+        <div class="mermaid">
+flowchart LR
+    A["entrypoint"] --> B["layer"] --> C[("store")]
+        </div>
+      </div>
+    </section>
+
+    <!-- ===================== Q2: HOW IS IT SHAPED? ===================== -->
+    <!-- One <section> per major concern. ER diagram for the domain, flowchart for
+         the code/module structure. Every cluster named in a diagram also appears in
+         a table below it, so nothing is diagram-only. Component vocabulary to reuse:
+         .card · .grid2 (two columns) · .callout (for surprises) · .pill · table -->
+    <section id="modules">
+      <h2>① Modules — the data model</h2>
+      <p>…</p>
+      <div class="diagram">
+        <div class="mermaid">
+erDiagram
+    A ||--o{ B : has
+        </div>
+      </div>
+
+      <!-- The highest-value block on the page. Grounded, non-obvious, ≥3 items. -->
+      <div class="callout">
+        <span class="lbl">What will surprise you</span>
+        <ul class="tight" style="margin-bottom:0">
+          <li>… (cite the real file / symbol it lives in)</li>
+        </ul>
+      </div>
+
+      <h3>Modules at a glance</h3>
+      <table>
+        <tr><th>Cluster</th><th>Members</th></tr>
+        <tr><td>…</td><td><code>…</code></td></tr>
+      </table>
+    </section>
+
+    <!-- ===================== Q3–Q4: PATTERNS & LAYERS ===================== -->
+    <section id="layers">
+      <h2>Where logic lives</h2>
+      <table>
+        <tr><th>Layer</th><th>Rule</th><th>Examples</th></tr>
+        <tr><td><code>…</code></td><td>…</td><td><code>…</code></td></tr>
+      </table>
+    </section>
+
+    <!-- ===================== Q5: A REQUEST, END TO END ===================== -->
+    <section id="lifecycle">
+      <h2>A request, end-to-end</h2>
+      <p>Worked example: …</p>
+      <div class="diagram">
+        <div class="mermaid">
+sequenceDiagram
+    participant UI
+    participant API
+    UI->>API: call
+    API-->>UI: result
+        </div>
+      </div>
+    </section>
+
+    <!-- ===================== Q6: KEY SEAMS ===================== -->
+    <section id="seams">
+      <h2>Key seams to know</h2>
+      <table>
+        <tr><th>Seam</th><th>Owns</th></tr>
+        <tr><td><code>…</code></td><td>… (and the ADR / why behind it)</td></tr>
+      </table>
+    </section>
+
+    <!-- ===================== Q7: WHERE TO START ===================== -->
+    <section id="start">
+      <h2>Where to start (first day)</h2>
+      <div class="card">
+        <ul class="tight" style="margin-bottom:0">
+          <li><span class="key">1.</span> Read the orientation docs …</li>
+          <li><span class="key">2.</span> Run it: <code>{{VERIFIED_RUN_COMMAND}}</code></li>
+          <li><span class="key">3.</span> Trace one vertical slice: … → … → its tests</li>
+          <li><span class="key">4.</span> Run the tests: <code>…</code></li>
+          <li><span class="key">5.</span> Ship your first change …</li>
+        </ul>
+      </div>
+    </section>
+
+    <footer>
+      Generated architecture map · derived from {{SOURCE_PATHS}}.
+      Diagrams render via Mermaid. The project's own docs remain the source of truth for terminology.
+    </footer>
+  </main>
+</div>
+
+<script>
+  // Dual-theme mermaid: diagrams re-render on theme change so light and dark both read.
+  const nodes = Array.from(document.querySelectorAll('.mermaid'));
+  const src = nodes.map(n => n.textContent);
+  const darkVars = {
+    background:'#15103a', primaryColor:'#1e1656', primaryBorderColor:'#536afd',
+    primaryTextColor:'#f5f4fb', lineColor:'#8c9cfe', secondaryColor:'#2c2270',
+    tertiaryColor:'#0b0726', fontFamily:'ui-sans-serif, system-ui, sans-serif', fontSize:'14px'
+  };
+  const lightVars = {
+    background:'#ffffff', primaryColor:'#eef0f8', primaryBorderColor:'#4653d8',
+    primaryTextColor:'#1a1830', lineColor:'#5a4bcf', secondaryColor:'#e0e2ee',
+    tertiaryColor:'#f7f7fb', fontFamily:'ui-sans-serif, system-ui, sans-serif', fontSize:'14px'
+  };
+  function currentTheme(){
+    return document.documentElement.getAttribute('data-theme')
+      || (matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
+  }
+  function renderMermaid(){
+    const dark = currentTheme() === 'dark';
+    nodes.forEach((n, i) => { n.innerHTML = src[i]; n.removeAttribute('data-processed'); });
+    mermaid.initialize({
+      startOnLoad:false, theme: dark ? 'dark' : 'default',
+      themeVariables: dark ? darkVars : lightVars,
+      er:{ useMaxWidth:true }, flowchart:{ useMaxWidth:true, curve:'basis' }, sequence:{ useMaxWidth:true }
+    });
+    mermaid.run({ nodes });
+  }
+  document.getElementById('themeToggle').addEventListener('click', () => {
+    document.documentElement.setAttribute('data-theme', currentTheme() === 'dark' ? 'light' : 'dark');
+    renderMermaid();
+  });
+  matchMedia('(prefers-color-scheme: dark)').addEventListener('change', () => {
+    if (!document.documentElement.getAttribute('data-theme')) renderMermaid();
+  });
+  renderMermaid();
+</script>
+</body>
+</html>

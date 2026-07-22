@@ -15,6 +15,7 @@
     "release"
   ],
   "skills": [
-    "./skills/setup-git-workflow"
+    "./skills/setup-git-workflow",
+    "./skills/architecture-map"
   ]
 }

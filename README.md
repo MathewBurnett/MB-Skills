@@ -35,6 +35,10 @@ Generates an architectural map of the repository, useful for understanding depen
 
 Scaffolds the necessary Git workflow plumbing in a repository (e.g., PR review structure, CI integration points) to ensure consistent development practices from feature branch to merge.
 
+### [setup-laravel-react-project](skills/setup-laravel-react-project/)
+
+Bootstraps a Laravel + React project the way Mathew likes it — Dockerized skeleton, CI, git workflow, engineering-skill config, and a graphify knowledge graph. Run once when starting a new Laravel + React project, or to bring an existing one up to the same standard.
+
 ### [starmap](skills/starmap/)
 
 Render a wayfinder map as a pannable star-map — tickets as stars coloured by status, blocking as flowing edges, fog at the rim. Use when the user wants to see, view, visualise or "serve" a wayfinder map, asks what the frontier looks like, or types /starmap.

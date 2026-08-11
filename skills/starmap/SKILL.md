@@ -1,6 +1,7 @@
 ---
 name: starmap
 description: Render a wayfinder map as a pannable star-map — tickets as stars coloured by status, blocking as flowing edges, fog at the rim. Use when the user wants to see, view, visualise or "serve" a wayfinder map, asks what the frontier looks like, or types /starmap.
+disable-model-invocation: true
 ---
 
 # Star-map

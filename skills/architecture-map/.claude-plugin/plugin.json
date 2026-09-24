@@ -1,0 +1,18 @@
+{
+  "name": "architecture-map",
+  "version": "0.1.0",
+  "description": "Generates an architectural map of the repository, useful for understanding dependencies and components for new features or refactors.",
+  "author": {
+    "name": "Mathew Burnett"
+  },
+  "repository": "https://github.com/MathewBurnett/MB-Skills",
+  "license": "MIT",
+  "keywords": [
+    "engineering",
+    "skills",
+    "architecture"
+  ],
+  "skills": [
+    "./"
+  ]
+}

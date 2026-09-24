@@ -1,0 +1,19 @@
+{
+  "name": "starmap",
+  "version": "0.1.0",
+  "description": "Render a wayfinder map as a pannable star-map — tickets as stars coloured by status, blocking as flowing edges, fog at the rim.",
+  "author": {
+    "name": "Mathew Burnett"
+  },
+  "repository": "https://github.com/MathewBurnett/MB-Skills",
+  "license": "MIT",
+  "keywords": [
+    "engineering",
+    "skills",
+    "wayfinder",
+    "planning"
+  ],
+  "skills": [
+    "./"
+  ]
+}

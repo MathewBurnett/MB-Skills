@@ -8,13 +8,73 @@
     {
       "name": "mb-skills",
       "source": "./",
-      "description": "Scaffolds a repo's shipping path — ship/land scripts, versioning, health endpoint, and branch topology.",
+      "description": "All five skills below, bundled together. Scaffolds a repo's shipping path — ship/land scripts, versioning, health endpoint, and branch topology — plus architecture mapping, wayfinder star-maps, and reMarkable publishing.",
       "category": "engineering",
       "keywords": [
         "engineering",
         "skills",
         "git-workflow",
         "release"
+      ]
+    },
+    {
+      "name": "architecture-map",
+      "source": "./skills/architecture-map",
+      "description": "Generates an architectural map of the repository, useful for understanding dependencies and components for new features or refactors.",
+      "category": "engineering",
+      "keywords": [
+        "engineering",
+        "skills",
+        "architecture"
+      ]
+    },
+    {
+      "name": "setup-git-workflow",
+      "source": "./skills/setup-git-workflow",
+      "description": "Scaffolds the necessary Git workflow plumbing in a repository (e.g., PR review structure, CI integration points) to ensure consistent development practices from feature branch to merge.",
+      "category": "engineering",
+      "keywords": [
+        "engineering",
+        "skills",
+        "git-workflow",
+        "ci",
+        "release"
+      ]
+    },
+    {
+      "name": "setup-laravel-react-project",
+      "source": "./skills/setup-laravel-react-project",
+      "description": "Bootstraps a Laravel + React project the way Mathew likes it — Dockerized skeleton, CI, git workflow, engineering-skill config, and a graphify knowledge graph.",
+      "category": "engineering",
+      "keywords": [
+        "engineering",
+        "skills",
+        "laravel",
+        "react",
+        "scaffolding"
+      ]
+    },
+    {
+      "name": "starmap",
+      "source": "./skills/starmap",
+      "description": "Render a wayfinder map as a pannable star-map — tickets as stars coloured by status, blocking as flowing edges, fog at the rim.",
+      "category": "engineering",
+      "keywords": [
+        "engineering",
+        "skills",
+        "wayfinder",
+        "planning"
+      ]
+    },
+    {
+      "name": "remarkable-publish",
+      "source": "./skills/remarkable-publish",
+      "description": "Render a document or drawing and push it to a reMarkable tablet, via a self-hosted protomarkable MCP server.",
+      "category": "productivity",
+      "keywords": [
+        "remarkable",
+        "pdf",
+        "mcp"
       ]
     }
   ]

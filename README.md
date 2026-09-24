@@ -16,12 +16,23 @@ npx skills add MathewBurnett/MB-Skills
 
 Add `-g` to install into `~/.claude/skills/` for every project instead, `--skill=setup-git-workflow` to skip the picker, and `npx skills update setup-git-workflow` to pull a newer version.
 
-**Claude Code plugin** — auto-updating, read-only, nothing to clone:
+**Claude Code plugin** — auto-updating, read-only, nothing to clone. Add the marketplace once, then install either everything or just the skill(s) you want — each skill below is also its own plugin:
 
 ```
 /plugin marketplace add MathewBurnett/MB-Skills
+
+# everything:
 /plugin install mb-skills@mathewburnett
+
+# or just one skill at a time:
+/plugin install architecture-map@mathewburnett
+/plugin install setup-git-workflow@mathewburnett
+/plugin install setup-laravel-react-project@mathewburnett
+/plugin install starmap@mathewburnett
+/plugin install remarkable-publish@mathewburnett
 ```
+
+Installing `mb-skills` pulls in all five as one bundle — don't also install any of the individual ones, or you'll have two copies of that skill competing. Pick the bundle if you want everything and don't mind the (small) added context cost of skills you're not using; pick individual plugins to keep only what you need.
 
 Either way, run `/setup-git-workflow` in the repo you want to scaffold.
 
@@ -48,7 +59,7 @@ Render a wayfinder map as a pannable star-map — tickets as stars coloured by s
 Render a document or drawing and push it to a reMarkable tablet, via a self-hosted [protomarkable](https://github.com/MathewBurnett/ProtoMarkable) MCP server. Unlike the other skills here, this one bundles real code (a Puppeteer HTML→PDF pipeline) and an MCP server connection, so it needs two extra things the plugin install path handles for you but the plain `npx skills add` copy doesn't:
 
 - **Dependencies**: `npm install` at this repo's root once, for Puppeteer (bundles its own Chromium).
-- **Configuration**: on install (`/plugin install mb-skills@mathewburnett` or `claude plugin install mb-skills@mathewburnett --config ...`), you'll be asked for `protomarkable_server_url` and `protomarkable_auth_token` — the deployed server's URL and its bearer token (`/opt/protomarkable/.env` on the deploy VM). The token is stored sensitively (OS keychain / `~/.claude/.credentials.json`), never in `settings.json` or this repo.
+- **Configuration**: on install — whether `mb-skills` (the bundle) or `remarkable-publish` (standalone) — you'll be asked for `protomarkable_server_url` and `protomarkable_auth_token` — the deployed server's URL and its bearer token (`/opt/protomarkable/.env` on the deploy VM). The token is stored sensitively (OS keychain / `~/.claude/.credentials.json`), never in `settings.json` or this repo. If the interactive prompt doesn't take, set it directly: `claude plugin install remarkable-publish@mathewburnett --config protomarkable_server_url=... --config protomarkable_auth_token=... -y`.
 
 The skill's own source lives in [ProtoMarkable's `skill/` workspace](https://github.com/MathewBurnett/ProtoMarkable/tree/master/skill); `scripts/sync-to-mb-skills.sh` there pushes built changes here. Edit it there, not here — this copy gets overwritten on the next sync.
 

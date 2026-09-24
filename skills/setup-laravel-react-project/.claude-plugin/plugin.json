@@ -1,0 +1,20 @@
+{
+  "name": "setup-laravel-react-project",
+  "version": "0.1.0",
+  "description": "Bootstraps a Laravel + React project the way Mathew likes it — Dockerized skeleton, CI, git workflow, engineering-skill config, and a graphify knowledge graph. Run once when starting a new Laravel + React project, or to bring an existing one up to the same standard.",
+  "author": {
+    "name": "Mathew Burnett"
+  },
+  "repository": "https://github.com/MathewBurnett/MB-Skills",
+  "license": "MIT",
+  "keywords": [
+    "engineering",
+    "skills",
+    "laravel",
+    "react",
+    "scaffolding"
+  ],
+  "skills": [
+    "./"
+  ]
+}

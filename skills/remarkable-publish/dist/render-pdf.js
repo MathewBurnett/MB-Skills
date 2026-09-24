@@ -62,4 +62,12 @@ export async function renderMarkdownToPdf(markdown, options = {}) {
 export async function renderSvgToPdf(svg, options = {}) {
     return renderHtmlToPdf(await buildDrawingHtml(svg, options));
 }
+/**
+ * Renders an already-complete HTML document into a PDF, unlike renderMarkdownToPdf/renderSvgToPdf —
+ * no template wrapping, no title substitution. The input is expected to bring its own <html>/<head>/
+ * <body> and any <style>/@page rules; nothing here second-guesses that structure.
+ */
+export async function renderRawHtmlToPdf(html) {
+    return renderHtmlToPdf(html);
+}
 //# sourceMappingURL=render-pdf.js.map

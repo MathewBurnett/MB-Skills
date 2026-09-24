@@ -23,14 +23,19 @@ PDF that lands on the user's tablet, via the `protomarkable-mcp` server.
    - Prose, notes, summaries, markdown content -> `document` mode.
    - Diagrams, sketches, visual layouts -> generate an `<svg>...</svg>`
      markup fragment -> `drawing` mode.
+   - The user already hands you a complete HTML file (its own
+     `<html>/<head>/<body>`, its own styling) -> `html` mode. Rendered as-is,
+     with no markdown parsing and no template wrapping — if it wants
+     reMarkable-friendly pagination, that's on the file's own `@page` CSS.
 
 3. **Render the PDF.** Write the content to a temp file, then run:
    ```
-   node ${CLAUDE_PLUGIN_ROOT}/skills/remarkable-publish/dist/cli.js <document|drawing> <input-file> <output-file> "<Title>"
+   node ${CLAUDE_PLUGIN_ROOT}/skills/remarkable-publish/dist/cli.js <document|drawing|html> <input-file> <output-file> "<Title>"
    ```
-   (`<Title>` is optional.) This calls the shared HTML-to-PDF pipeline — `renderMarkdownToPdf` for `document` mode,
-   `renderSvgToPdf` for `drawing` mode — and writes a paginated PDF to
-   `<output-file>`. The first run after a fresh plugin install may need `npm install` in `${CLAUDE_PLUGIN_ROOT}` first, for Puppeteer's dependencies.
+   (`<Title>` is optional, and ignored in `html` mode — the input's own
+   `<title>` stands.) This calls the shared HTML-to-PDF pipeline — `renderMarkdownToPdf` for `document` mode,
+   `renderSvgToPdf` for `drawing` mode, `renderRawHtmlToPdf` for `html` mode
+   — and writes a paginated PDF to `<output-file>`. The first run after a fresh plugin install may need `npm install` in `${CLAUDE_PLUGIN_ROOT}` first, for Puppeteer's dependencies.
 
 4. **Upload.** Base64-encode the rendered PDF and call
    `remarkable_upload_file` with `name`, `content_base64`, and

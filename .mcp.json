@@ -1,0 +1,11 @@
+{
+  "mcpServers": {
+    "protomarkable": {
+      "type": "http",
+      "url": "${user_config.protomarkable_server_url}",
+      "headers": {
+        "Authorization": "Bearer ${user_config.protomarkable_auth_token}"
+      }
+    }
+  }
+}

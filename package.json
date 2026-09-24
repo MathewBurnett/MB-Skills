@@ -1,0 +1,9 @@
+{
+  "name": "mb-skills",
+  "private": true,
+  "description": "Runtime dependencies for skills that bundle real code (currently: remarkable-publish). Run `npm install` here before using such a skill.",
+  "dependencies": {
+    "marked": "^18.0.14",
+    "puppeteer": "^25.11.0"
+  }
+}

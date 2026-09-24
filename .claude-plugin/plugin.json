@@ -16,6 +16,25 @@
   ],
   "skills": [
     "./skills/setup-git-workflow",
-    "./skills/architecture-map"
-  ]
+    "./skills/architecture-map",
+    "./skills/setup-laravel-react-project",
+    "./skills/starmap",
+    "./skills/remarkable-publish"
+  ],
+  "userConfig": {
+    "protomarkable_server_url": {
+      "type": "string",
+      "title": "ProtoMarkable MCP server URL",
+      "description": "HTTP URL of the deployed protomarkable MCP server, used by the remarkable-publish skill.",
+      "default": "https://protomarkable.protoselect.co.uk/mcp",
+      "required": true
+    },
+    "protomarkable_auth_token": {
+      "type": "string",
+      "title": "ProtoMarkable bearer token",
+      "description": "The MCP_AUTH_TOKEN configured on that server. Get it from /opt/protomarkable/.env on the deploy VM.",
+      "sensitive": true,
+      "required": true
+    }
+  }
 }

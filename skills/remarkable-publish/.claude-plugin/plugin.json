@@ -1,6 +1,6 @@
 {
   "name": "remarkable-publish",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "description": "Render a document or drawing and push it to a reMarkable tablet, via a self-hosted protomarkable MCP server.",
   "author": {
     "name": "Mathew Burnett"

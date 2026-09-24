@@ -36,8 +36,11 @@ export async function buildDrawingHtml(svg, options = {}) {
  * The HTML being rendered embeds untrusted content (markdown/SVG the user asked to publish, which
  * may itself have been pasted or fetched from a third party) — JS execution and all outbound
  * network requests are disabled so an embedded `<script>`/`onerror`/remote-image payload can't run
- * code or exfiltrate anything through the render step. Nothing in the current templates needs
- * either capability.
+ * code or exfiltrate anything through the render step. `data:` requests are let through: they carry
+ * their own bytes inline, so unlike an `http(s):`/`file:` URL there's nothing to fetch and nothing
+ * to exfiltrate to — this is what lets a caller embed real images (as `data:` URIs) at all, since
+ * everything else here — relative paths (there's no base URL once content lands via setContent
+ * rather than page.goto) and any other scheme — resolves to nothing either way.
  */
 async function renderHtmlToPdf(html) {
     const browser = await puppeteer.launch({ args: ["--no-sandbox", "--disable-setuid-sandbox"] });
@@ -45,7 +48,14 @@ async function renderHtmlToPdf(html) {
         const page = await browser.newPage();
         await page.setJavaScriptEnabled(false);
         await page.setRequestInterception(true);
-        page.on("request", (req) => req.abort());
+        page.on("request", (req) => {
+            if (req.url().startsWith("data:")) {
+                void req.continue();
+            }
+            else {
+                void req.abort();
+            }
+        });
         await page.setContent(html, { waitUntil: "load" });
         const pdf = await page.pdf({ printBackground: true, preferCSSPageSize: true });
         return Buffer.from(pdf);

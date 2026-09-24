@@ -37,11 +37,27 @@ PDF that lands on the user's tablet, via the `protomarkable-mcp` server.
    `renderSvgToPdf` for `drawing` mode, `renderRawHtmlToPdf` for `html` mode
    — and writes a paginated PDF to `<output-file>`. The first run after a fresh plugin install may need `npm install` in `${CLAUDE_PLUGIN_ROOT}` first, for Puppeteer's dependencies.
 
-4. **Upload.** Base64-encode the rendered PDF and call
-   `remarkable_upload_file` with `name`, `content_base64`, and
-   `file_type: "pdf"`. If the user named a folder, pass it as
-   `target_folder` together with `create_folders: true`, so it lands there
-   whether or not that folder already exists.
+4. **Upload.** This server almost always runs remotely, not on the same
+   machine as you — so prefer the direct-upload flow over inlining the file
+   through your own output:
+   - Call `remarkable_request_upload` with `name`, `file_type: "pdf"`, and
+     (if the user named a folder) `target_folder` plus `create_folders: true`.
+     It returns an `upload_id` and a short-lived `upload_url`.
+   - PUT the rendered file's bytes to that URL yourself, e.g.
+     `curl -sf -X PUT --data-binary @<output-file> "<upload_url>"`. This is a
+     plain shell command — the file never passes through your own generated
+     output, so there's no size limit to worry about and nothing to
+     transcribe.
+   - Call `remarkable_finalize_upload` with the same `upload_id` to file it
+     into the reMarkable account.
+
+   Only fall back to `remarkable_upload_file` (`file_path` if you happen to
+   share a filesystem with the server, otherwise `content_base64`) for a
+   genuinely tiny file, or if `remarkable_request_upload` isn't available on
+   this server yet. Inlining a whole file as base64 through your own
+   generated output breaks down well before any documented size limit and
+   risks silent corruption on reconstruction — don't reach for it as a
+   default.
 
 5. **Confirm.** Tell the user the exact file name and the folder it landed
    in (or "root" if none was named).

@@ -66,6 +66,8 @@ jobs:
 
 **Frontend tests:** add a `run: npm test` step (after the build step) only if `package.json` declares a `test` script. Bootstrap (Step 1) doesn't scaffold a JS test runner, so on a fresh project there's nothing to run yet — don't add a step that fails on `npm error missing script`. Add it later, by hand, once Vitest or similar is wired up.
 
+**Docs-only:** when `/setup-git-workflow` generated `bin/docs-only-paths`, add `paths-ignore` to both `push` and `pull_request`, mirroring its `case` list (`**.md` for `*.md`, `docs/design/**` for `docs/design/*`). `push` is the one that matters: ship leaves `VERSION` alone for a docs-only change, so a build would re-publish the existing `:v<VERSION>` tag with different contents.
+
 The concurrency group cancels a superseded PR run but never a deploy already in flight — `cancel-in-progress` is keyed off `pull_request`, so a push to `main` always runs to completion.
 
 Completion criterion: this job is the one gate every PR passes through — `bin/land` (from `setup-git-workflow`) trusts `gh pr checks` against it. Confirm it actually runs clean on a throwaway branch/PR, not just that the YAML is well-formed.

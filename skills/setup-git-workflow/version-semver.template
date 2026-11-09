@@ -19,6 +19,8 @@ file=VERSION
 IFS=. read -r major minor patch < "$file"
 
 case "${1:-show}" in
+    -h|--help)
+        echo "usage: bin/version {show|major|minor|patch}"; exit 0 ;;
     show)
         echo "$major.$minor.$patch"; exit 0 ;;
     major)

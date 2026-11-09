@@ -10,8 +10,17 @@
 #
 # A guess can still lose a race: someone opens an issue or PR between here and
 # gh pr create. The verify block below catches that and corrects it.
+#
+# A docs-only ship never stamps: a stamped VERSION names a PR with no image built
+# for it. Read after the commit above, so the whole branch diff is what's judged.
+docs_only=false
+if [ -x bin/docs-only-paths ] && [ -n "$base_ref" ] \
+    && git diff --name-only "$base_ref...HEAD" | bin/docs-only-paths; then
+    docs_only=true
+fi
+
 predicted=""
-if [ -x bin/version ] && $fresh_pr; then
+if [ -x bin/version ] && $fresh_pr && ! $docs_only; then
     # Empty repo (no issues, no PRs) → latest is empty → predict #1.
     latest=$(gh api \
         "repos/{owner}/{repo}/issues?state=all&sort=created&direction=desc&per_page=1" \
@@ -20,6 +29,18 @@ if [ -x bin/version ] && $fresh_pr; then
     predicted=$(( ${latest:-0} + 1 ))
     bin/version pr "$predicted" >/dev/null
     echo "→ VERSION → $(bin/version show) (predicting PR #$predicted)"
+    if [ -n "$(git status --porcelain VERSION)" ]; then
+        git add VERSION
+        if $made_commit; then
+            # Unpushed and ours, so amending is free.
+            git commit -q --amend --no-edit
+        else
+            # A prepared branch's commits belong to its author. VERSION rides on its
+            # own commit, which also keeps the first push a plain fast-forward.
+            git commit -q -m "chore: stamp VERSION for #$predicted"
+            made_commit=true
+        fi
+    fi
 fi
 
 # ── {{VERSION_VERIFY_BLOCK}} — M.R.V.f only; delete for semver or no versioning ──
@@ -31,14 +52,13 @@ fi
 # Correct in place when ship owns the head commit ($made_commit): amend rather
 # than adding a follow-up commit — a [skip ci] bump would leave the head SHA with
 # no checks at all, which bin/land reads as "no checks reported". On a base that
-# runs checks land now refuses that — but don't rely on it; keep the head SHA
-# honestly checked. On a prepared branch ship committed nothing of its own, so
-# the correction rides on its *own* commit instead — the author's commits are
-# never rewritten.
+# runs checks land refuses that — but don't rely on it; keep the head SHA honestly
+# checked. When the head is the author's, the correction rides on its *own* commit
+# instead — the author's commits are never rewritten.
 #
 # Only ever touches a PR this run just opened ($fresh_pr): a re-run pushes onto a
 # branch someone may have reviewed, and its VERSION is already correct anyway.
-if [ -x bin/version ] && $fresh_pr; then
+if [ -x bin/version ] && $fresh_pr && ! $docs_only; then
     pr=$(gh pr view "$branch" --json number -q .number)
     if [ "$pr" = "$predicted" ]; then
         echo "✓ VERSION $(bin/version show) — predicted PR #$pr, one CI run"
@@ -52,7 +72,7 @@ if [ -x bin/version ] && $fresh_pr; then
             if $made_commit; then
                 git commit -q --amend --no-edit
             else
-                printf 'chore: stamp VERSION for #%s\n\nCo-Authored-By: Claude Opus 4.8 <noreply@anthropic.com>\n' "$pr" | git commit -q -F -
+                git commit -q -m "chore: stamp VERSION for #$pr"
             fi
             # --force-with-lease refuses if origin moved under us (someone pushed
             # to the branch between our push and now) rather than clobbering it.
@@ -65,4 +85,16 @@ if [ -x bin/version ] && $fresh_pr; then
             fi
         fi
     fi
+elif $docs_only; then
+    echo "✓ docs-only ship — VERSION stays at $(bin/version show)"
 fi
+
+# ── {{GUARD_VERSION_BLOCK}} (pre-push) — M.R.V.f only; delete otherwise, and the guard then blocks every such push ──
+    # This push is already right for its PR, so it needs no ship: VERSION names the
+    # PR, or the PR is docs-only and deliberately carries no stamp. An unreadable
+    # diff fails open.
+    [ "$(git show "$local_sha:VERSION" 2>/dev/null | cut -d. -f3)" = "$pr" ] && continue
+    if [ -x bin/docs-only-paths ]; then
+        files=$(git diff --name-only "origin/$base...$local_sha" 2>/dev/null) || continue
+        printf '%s\n' "$files" | bin/docs-only-paths && continue
+    fi

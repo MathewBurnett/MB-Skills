@@ -1,0 +1,15 @@
+# ── {{SLOW_TESTS_BLOCK}} — only when a slow test tier is left out of the default run and CI; delete otherwise ──
+# The slow tests run here, locally, whenever the branch touches what they guard, and
+# on demand with SHIP_FULL=1.
+slow=$( {
+    [ -n "$base_ref" ] && git diff --name-only "$base_ref...HEAD";
+    git diff --name-only HEAD;
+    git ls-files -o --exclude-standard;
+} | grep -E '{{SLOW_TESTS_PATHS}}' || true)
+if [ -n "${SHIP_FULL:-}" ] || [ -n "$slow" ]; then
+    echo "→ slow tests…"
+    if ! {{SLOW_TESTS_COMMAND}} >/tmp/ship-slow.log 2>&1; then
+        echo "✗ slow tests failed:"; tail -25 /tmp/ship-slow.log; exit 1
+    fi
+    echo "✓ slow tests green"
+fi

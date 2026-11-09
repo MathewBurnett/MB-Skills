@@ -1,17 +1,23 @@
 #!/usr/bin/env bash
-# Push guard — keep ship the only path onto a branch that triggers CI.
+# Push guard — keep ship the only path that can put a wrong commit in front of CI.
 #
 # Two pushes must never happen behind ship's back:
 #   1. A direct push to a persistent branch (main/stage). Those are the deploy
 #      lines — a push there builds and ships a container — and nothing should
 #      reach them except a reviewed PR that ship raised and land merged.
-#   2. A push to a feature branch whose open PR runs checks. It re-runs that PR's
-#      CI on an unstamped, unverified commit, costing the one-run PR a second run.
-#      ship stamps VERSION and runs verify *before* it pushes; a bare push skips
-#      both.
+#   2. A push to a feature branch whose open PR runs checks, unless the pushed
+#      commit is already right for that PR. Otherwise it re-runs CI on a commit
+#      ship never prepared, costing the one-run PR a second run.
 #
 # ship exports GIT_SHIP=1, so its own pushes always pass. A feature branch with no
 # PR, or a PR into a base that runs no checks, isn't triggering CI yet — it passes.
+# The guard fails open: no gh, offline, or anything ambiguous lets the push through.
+
+# The pushed refs arrive on stdin once; capture them so every step below can read them.
+refs=$(cat)
+
+{{LFS_PRE_PUSH_BLOCK}}
+
 [ -n "${GIT_SHIP:-}" ] && exit 0
 
 # Bases whose PRs run checks — the same set bin/land waits on ({{ADR_REF}}).
@@ -37,19 +43,32 @@ EOF
     exit 1
 }
 
-# stdin gives one line per pushed ref: <local ref> <local sha> <remote ref> <remote sha>.
-while read -r _ _ remote_ref _; do
+# One line per pushed ref: <local ref> <local sha> <remote ref> <remote sha>.
+while read -r _ local_sha remote_ref _; do
     [ -n "$remote_ref" ] || continue
-    branch=${remote_ref#refs/heads/}
+    case "$remote_ref" in
+        refs/heads/*) branch=${remote_ref#refs/heads/} ;;
+        *) continue ;;                              # a tag is a deliberate act
+    esac
 
     # 1. Direct push to a persistent deploy branch (main/stage/prod).
     for persistent in {{PROTECTED_BRANCHES}} {{DEFAULT_BASE}}; do
         [ "$branch" = "$persistent" ] && block "\"$branch\" is a persistent deploy branch"
     done
 
-    # 2. Feature branch whose open PR runs checks — the push re-runs them.
-    # No PR (or gh unavailable) → empty base → not guarded, which is the point.
-    base=$(gh pr view "$branch" --json baseRefName -q .baseRefName </dev/null 2>/dev/null || true)
-    [ -n "$base" ] && runs_checks "$base" && block "the PR $branch → $base runs CI checks"
-done
+    # A branch deletion (an all-zero sha) triggers no CI.
+    [ -z "${local_sha//0/}" ] && continue
+
+    # 2. Feature branch whose OPEN PR runs checks. `gh pr view` returns the branch's
+    # most recent PR in any state, so a reused branch's merged PR is filtered out here.
+    open=$(gh pr view "$branch" --json number,state,baseRefName \
+        -q 'select(.state=="OPEN") | "\(.number) \(.baseRefName)"' </dev/null 2>/dev/null || true)
+    [ -n "$open" ] || continue
+    read -r pr base <<< "$open"
+    runs_checks "$base" || continue
+
+    {{GUARD_VERSION_BLOCK}}
+
+    block "the PR $branch → $base runs CI checks"
+done <<< "$refs"
 exit 0

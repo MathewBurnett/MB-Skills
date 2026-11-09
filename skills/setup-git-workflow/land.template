@@ -8,15 +8,29 @@
 #   bin/land --no-checks [<pr-number>]            # merge a base that runs checks anyway
 #
 # Pass --base for epic/integration branches: the post-merge sync checks out that
-# branch, and PRs into it that carry no CI checks are merged without waiting.
+# branch.
 set -euo pipefail
 cd "$(dirname "$0")/.."
+
+usage() {
+    cat <<'EOF'
+usage: bin/land [--base <branch>] [--no-checks] [<pr-number>]
+
+Merge an open PR once CI is green, then sync the base branch. With no PR number,
+uses the current branch's open PR.
+
+  -b, --base <branch>   base branch to merge into and sync (default: {{DEFAULT_BASE}})
+      --no-checks       proceed even when a base that runs CI reports no checks
+  -h, --help            show this help and exit
+EOF
+}
 
 base="{{DEFAULT_BASE}}"
 no_checks_ok=false
 args=()
 while [ $# -gt 0 ]; do
     case "$1" in
+        -h|--help) usage; exit 0 ;;
         -b|--base) base="${2:?--base needs a branch}"; shift 2 ;;
         --base=*)  base="${1#*=}"; shift ;;
         --no-checks) no_checks_ok=true; shift ;;
@@ -37,16 +51,46 @@ base_runs_checks() {
     esac
 }
 
+# True when every file the PR touches is docs-only — the one benign reason a PR on
+# a checked base reports no checks, because CI's paths-ignore skipped it. Fails
+# closed: an unreadable file list is not docs-only. REST, not `gh pr view --json
+# files`, so a GraphQL outage can't turn every docs-only land into a refusal.
+ci_skipped_by_paths() {
+    [ -x bin/docs-only-paths ] || return 1
+    gh api --paginate "repos/{owner}/{repo}/pulls/$1/files" --jq '.[].filename' 2>/dev/null \
+        | bin/docs-only-paths
+}
+
+# The path of any worktree other than this one holding branch $1. awk reads to the
+# end rather than exiting on a match, so git never takes a SIGPIPE.
+worktree_holding() {
+    git worktree list --porcelain | awk -v ref="refs/heads/$1" -v here="$(git rev-parse --show-toplevel)" '
+        /^worktree / { path = substr($0, 10) }
+        $0 == "branch " ref && path != here { print path }'
+}
+
+# Issue numbers a PR body closes — every closing keyword GitHub recognises.
+closed_issues() {
+    printf '%s\n' "$1" \
+        | grep -oiE '\b(close[sd]?|fix(es|ed)?|resolve[sd]?)[[:space:]]+#[0-9]+' \
+        | grep -oE '[0-9]+' | sort -un || true
+}
+
 pr="${1:-}"
 [ -n "$pr" ] || pr=$(gh pr view --json number -q .number 2>/dev/null || true)
 [ -n "$pr" ] || { echo "usage: bin/land [--base <branch>] <pr-number> (no PR for the current branch)" >&2; exit 2; }
+
+docs_only=false
+if ci_skipped_by_paths "$pr"; then docs_only=true; fi
 
 echo "→ checking CI on PR #$pr…"
 if gh pr checks "$pr" >/tmp/land-ci.log 2>&1; then
     echo "✓ CI green"
 elif grep -q "no checks reported" /tmp/land-ci.log; then
     # {{NO_CHECKS_NOTE}}
-    if $no_checks_ok; then
+    if $docs_only; then
+        echo "✓ no checks — PR #$pr touches only docs-only paths, which CI skips"
+    elif $no_checks_ok; then
         echo "ℹ no CI checks on this PR — proceeding (--no-checks)"
     elif base_runs_checks "$base"; then
         echo "✗ no checks reported on a PR into $base, which runs CI." >&2
@@ -65,9 +109,45 @@ else
     echo "✓ CI green"
 fi
 
-{{DEPLOY_CHECK_BLOCK}}
+# Read off the PR before the merge, so nothing after it relies on it staying queryable.
+head_branch=$(gh pr view "$pr" --json headRefName -q .headRefName 2>/dev/null || true)
+pr_body=$(gh pr view "$pr" --json body -q .body 2>/dev/null || true)
 
-gh pr merge "$pr" --merge --delete-branch
+# --delete-branch also deletes the local branch, which git refuses while another
+# worktree has it checked out. That failure comes after the merge, and set -e would
+# then stop land before the sync below. When a worktree holds the branch, delete
+# only the remote one and leave the worktree to whoever is using it.
+holder=$(worktree_holding "$head_branch")
+if [ -n "$holder" ]; then
+    gh pr merge "$pr" --merge
+    if gh api -X DELETE "repos/{owner}/{repo}/git/refs/heads/$head_branch" >/dev/null 2>&1; then
+        echo "ℹ $head_branch is checked out at $holder: deleted the remote branch only."
+    else
+        echo "⚠ $head_branch is checked out at $holder, and the remote branch could not be deleted (continuing)."
+    fi
+else
+    gh pr merge "$pr" --merge --delete-branch
+fi
+
+# A background graph rebuild can leave graphify-out/ dirty, which would refuse the
+# checkout below. It is generated, so discarding it loses nothing.
+git checkout -q -- graphify-out 2>/dev/null || true
 git checkout -q "$base" && git pull -q --ff-only
 echo "✓ merged #$pr and synced $base:"
 git log --oneline -1
+
+{{DEPLOY_MESSAGE_BLOCK}}
+
+# An epic slice's tickets are done once it lands in the epic. GitHub honours
+# "Closes #N" only on a merge into the default branch, so without this they stay
+# open — and everything they block stays blocked — until the whole epic lands.
+# Best-effort, like everything else after the merge.
+if [[ "$base" == {{EPIC_PREFIX}}* ]]; then
+    while IFS= read -r n; do
+        [ -n "$n" ] || continue
+        gh api "repos/{owner}/{repo}/issues/$n" -X PATCH -f state=closed -f state_reason=completed >/dev/null 2>&1 \
+            && gh api "repos/{owner}/{repo}/issues/$n/comments" -f body="Landed in \`$base\` via #$pr; it reaches the base branch when the epic does." >/dev/null 2>&1 \
+            && echo "  ✓ closed #$n" \
+            || echo "  ⚠ could not close #$n (continuing)"
+    done <<< "$(closed_issues "$pr_body")"
+fi

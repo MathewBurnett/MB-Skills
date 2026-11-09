@@ -43,6 +43,4 @@ rm -f /tmp/.graphify-nudged-search-test
 graphify hook install
 ```
 
-Installs `post-commit` and `post-checkout` into `.git/hooks/` (local to this clone — not tracked in git, since the project has no existing `core.hooksPath` convention to hook into) and registers a `graphify-out/graph.json merge=graphify` line in `.gitattributes` so future merges union the graph instead of conflicting on raw JSON. Confirm with `graphify hook status`.
-
-If the project later adopts a tracked `.githooks/` + `core.hooksPath` convention (shared hooks across every clone), migrate this installation into that directory rather than leaving it local-only — but that's a separate decision, out of scope here unless asked.
+Installs `post-commit` and `post-checkout` into the directory `core.hooksPath` names — `bin/hooks/`, set by `/setup-git-workflow` in Step 3 — and registers a `graphify-out/graph.json merge=graphify` line in `.gitattributes` so future merges union the graph instead of conflicting on raw JSON. Confirm with `graphify hook status`, and commit the two new hooks so every clone shares them.

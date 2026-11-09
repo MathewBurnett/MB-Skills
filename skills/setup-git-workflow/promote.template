@@ -45,10 +45,10 @@ if ! timeout 600 gh pr checks "$pr" --watch --interval 20 >/tmp/promote-ci.log 2
     echo "✗ checks did not pass (or timed out):"; tail -15 /tmp/promote-ci.log; exit 1
 fi
 
-{{DEPLOY_CHECK_BLOCK}}
-
 # No --delete-branch: $stage is persistent and carries on after the release.
 gh pr merge "$pr" --merge
 git checkout -q "$prod" && git pull -q --ff-only
 echo "✓ promoted $stage → $prod:"
 git log --oneline -1
+
+{{DEPLOY_MESSAGE_BLOCK}}

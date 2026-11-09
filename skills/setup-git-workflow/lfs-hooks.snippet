@@ -1,0 +1,16 @@
+# ── {{LFS_PRE_PUSH_BLOCK}} (pre-push) — only when .gitattributes tracks LFS files; delete otherwise ──
+# Runs ahead of the GIT_SHIP exit so ship's own pushes upload their objects too.
+# Refuses without the binary: a push without it publishes pointers whose objects
+# never reach the server, and every later checkout of them breaks.
+if command -v git-lfs >/dev/null 2>&1; then
+    printf '%s\n' "$refs" | git lfs pre-push "$@" || exit $?
+else
+    echo "This repo tracks files with Git LFS, but git-lfs is not on PATH. Install it, then: git lfs install" >&2
+    exit 2
+fi
+
+# ── bin/hooks/post-checkout, post-commit, post-merge — one file each, only when .gitattributes tracks LFS files ──
+# core.hooksPath stops git reading .git/hooks, so LFS's own hooks stop firing there.
+#!/bin/sh
+command -v git-lfs >/dev/null 2>&1 || { echo "git-lfs is not on PATH" >&2; exit 2; }
+git lfs <hook-name> "$@"

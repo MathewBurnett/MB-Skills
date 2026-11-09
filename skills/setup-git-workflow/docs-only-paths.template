@@ -1,0 +1,31 @@
+#!/usr/bin/env bash
+# True (exit 0) when every path on stdin (one per line) is one the test suite and the
+# deployed image cannot be affected by. The one place that rule lives:
+#
+#   - bin/ship reads it to decide whether to stamp VERSION. A docs-only ship must not:
+#     a stamped VERSION with no image behind it names a build that never happened.
+#   - bin/land reads it to decide whether a PR reporting "no checks" is benign.
+#   - the pre-push guard reads it to let a push onto a docs-only PR through.
+#
+# CI's `pull_request.paths-ignore` and `push.paths-ignore` cannot source a shell script,
+# so they MIRROR this list by hand — change one, change all three.
+#
+# Usage: <something producing one path per line> | bin/docs-only-paths
+# Exit: 0 if every line matched and at least one line was read; 1 otherwise — including
+# on empty input, because "nothing changed" is "nothing to ship", not "docs-only".
+set -euo pipefail
+
+found_a_path=false
+
+# `|| [ -n "$path" ]` is load-bearing: without it, a final line with no trailing newline
+# makes `read` return non-zero and the loop exits before checking that last path.
+while IFS= read -r path || [ -n "$path" ]; do
+    [ -n "$path" ] || continue
+    found_a_path=true
+    case "$path" in
+        {{DOCS_ONLY_CASE}}) ;;
+        *) exit 1 ;;
+    esac
+done
+
+[ "$found_a_path" = true ]

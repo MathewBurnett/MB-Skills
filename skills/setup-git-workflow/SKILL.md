@@ -10,8 +10,10 @@ Scaffold the shipping path a repo's agents and humans both use:
 
 - **`bin/ship`** — verify, branch, commit, push, open a PR. Never merges.
 - **`bin/land`** — merge an open PR once CI is green, then sync the base.
-- **`bin/hooks/pre-push`** — a push guard: blocks a non-`ship` push to a persistent deploy branch, or to a feature branch whose PR runs checks, so a bare `git push` can't skip verify + version-stamping and cost the PR a second CI run. A branch that isn't triggering CI yet is let through.
+- **`bin/check`** — the fast format-and-test loop for mid-task iteration. Not a gate.
+- **`bin/hooks/pre-push`** — a push guard: blocks a non-`ship` push to a persistent deploy branch, or to a feature branch whose PR runs checks unless the pushed commit is already right for that PR, so a bare `git push` can't skip verify + version-stamping and cost the PR a second CI run. A branch that isn't triggering CI yet is let through.
 - **`bin/version`** + `VERSION` — the version the running app reports.
+- **`bin/docs-only-paths`** — the one definition of a change that can't affect the tests or the image: no `VERSION` stamp, no build.
 - **`GET /health`** — 200 + `{status, version}`, so a deploy is checkable from outside.
 - **`docs/agents/git-workflow.md`** — the **topology**: which branch is the base, and when to pass `--base`.
 
@@ -28,7 +30,7 @@ This is prompt-driven, not a script. Explore, propose, confirm, then write.
 Read the repo's real state — don't assume:
 
 - `git remote -v`, `git branch -a` — is there a GitHub remote? Does a persistent `stage`/`develop`/`Users`-style branch already exist? Any `epic/*` branches?
-- `bin/` — do `ship`, `land`, or `test` already exist? If so, this is a **re-run**: read them and propose edits, not overwrites.
+- `bin/` — do `ship`, `land`, `check`, or `test` already exist? If so, this is a **re-run**: read them and propose edits, not overwrites.
 - `git config core.hooksPath` and `.git/hooks/pre-push` — is a hooks path or pre-push hook already set? The push guard installs via `core.hooksPath bin/hooks`, which is all-or-nothing; if either is already in use, surface it and ask before redirecting, don't clobber another repo's hooks.
 - `.claude/settings.json` — does it exist, and does it already define `hooks`? The `SessionStart` activator merges into it; on a fresh repo you create it, on an existing one you add to its `hooks` without clobbering.
 - Toolchain manifests — `composer.json`, `package.json`, `Cargo.toml`, `Makefile`, `pyproject.toml`. Read the actual `scripts`/task names; the lint and verify commands you generate must be ones this repo really has.
@@ -39,7 +41,7 @@ Read the repo's real state — don't assume:
 
 ### 2. Present and ask, one section at a time
 
-Summarise what you found, then walk the three decisions **in order**, waiting for an answer before the next. Assume the user hasn't thought about topology in these terms — each section opens with a short explainer, then the choices and a default.
+Summarise what you found, then walk the decisions **in order**, waiting for an answer before the next. Assume the user hasn't thought about topology in these terms — each section opens with a short explainer, then the choices and a default.
 
 **Section A — Topology.** Read [topologies.md](topologies.md) and present the three, with your recommendation based on step 1 (a `stage` branch already on the remote points at stage-promotion; a bare `main` points at trunk). The answer sets `DEFAULT_BASE` in the generated scripts.
 
@@ -61,24 +63,31 @@ The choice changes `ship`: M.R.V.f stamps `V` automatically (predicting the PR n
 
 **Section E — Health endpoint.** Explainer: `GET /health` returns 200 and `{"status":"ok","version":"…"}` — no auth, no database. It makes a deploy verifiable from outside (`curl <host>/health`) and tells you *which* version is actually live. Confirm the path is free, and ask whether existing overlapping endpoints should fold into it. Read [health-endpoint.md](health-endpoint.md) before writing any of it.
 
+**Section F — Docs-only changes.** Explainer: a README fix shouldn't run the suite, build an image, or redeploy. `bin/docs-only-paths` names the paths that can't affect either; `ship` leaves `VERSION` alone for them, `land` accepts their missing checks, and CI's `paths-ignore` skips them. Offer it when CI can carry `paths-ignore` on both `push` and `pull_request`. Default list: `*.md|docs/design/*|graphify-out/*|VERSION`. Exclude any docs path the tests read, such as fixtures under `docs/`. Declined → skip the file; every caller is guarded on it existing.
+
+**Section G — Slow tests.** Only when Explore found a test tier excluded from the default run or CI. Ask which paths it guards; `ship` then runs it when the branch touches them, or on `SHIP_FULL=1`.
+
 ### 3. Confirm
 
 Show the user the full generated `bin/ship`, `bin/land`, the `docs/agents/git-workflow.md`, and the `## Shipping` block — before writing anything. Let them edit.
 
 ### 4. Write
 
-Fill the templates and write the files:
+Fill the templates and write the files. [placeholders.md](placeholders.md) says what fills each `{{PLACEHOLDER}}`.
 
 - [ship.template](ship.template) → `bin/ship`, `chmod +x`
 - [land.template](land.template) → `bin/land`, `chmod +x`
+- [check.template](check.template) → `bin/check`, `chmod +x`
+- [docs-only-paths.template](docs-only-paths.template) → `bin/docs-only-paths`, `chmod +x` — **Section F only**. Mirror its list into CI's `paths-ignore` on `push` and `pull_request`. With a test suite, add a test that parses both CI lists and asserts they equal the script's `case` list, so "change one, change all three" is enforced.
+- [slow-tests.snippet](slow-tests.snippet) → spliced into ship's `{{SLOW_TESTS_BLOCK}}` — **Section G only**; otherwise delete the placeholder line.
 - [pre-push.template](pre-push.template) → `bin/hooks/pre-push`, `chmod +x`; then `git config core.hooksPath bin/hooks` — unless the Explore step found an existing hooks path to reconcile first. It reuses three sets you've already fixed: `{{CHECKED_BASES}}` (same value as `bin/land`), `{{PROTECTED_BRANCHES}}` and `{{DEFAULT_BASE}}` (same as `bin/ship`) — no new placeholder, but all three must match their other use. `ship` already exports the `GIT_SHIP=1` sentinel the hook waits for. Activating it on every fresh checkout is its own step — see the next bullet.
 - **Activate the guard automatically — the manual config line is the fallback, not the mechanism.** `core.hooksPath` is per-checkout local config git never tracks, so a fresh clone starts with the guard *inactive* until something re-runs the config line. Don't rely on a human remembering it; scaffold two activators:
   - A **`SessionStart` hook** in tracked `.claude/settings.json` — harness-run, dependency-free, idempotent, and toolchain-agnostic, so emit it always: `{"hooks":{"SessionStart":[{"hooks":[{"type":"command","command":"git -C \"$CLAUDE_PROJECT_DIR\" config core.hooksPath bin/hooks"}]}]}}`. If the file already exists, merge into its `hooks` rather than clobbering it. Document the one catch: the watcher only loads `.claude/settings.json` if it existed at session start, so on the session that *creates* it the hook first fires after `/hooks` is opened once (reloads config) or the session restarts — automatic on every fresh checkout after that.
   - An **install-time step** riding on whatever a fresh checkout already runs, so humans, CI, and non-Claude tooling are covered too. Attach it to the toolchain you found in Explore — don't hardcode composer: `package.json` → a `postinstall`/`prepare` script, `composer.json` → `post-install-cmd`, a `Makefile`/`justfile` → the `setup`/`init` target the README points people at, nothing suitable → lean on the `SessionStart` hook and the documented manual line. Always guard it with `git rev-parse --is-inside-work-tree` so it's a no-op in a `.git`-less context (a Docker build whose context excludes `.git`, a source tarball) instead of failing the build: `git rev-parse --is-inside-work-tree >/dev/null 2>&1 && git config core.hooksPath bin/hooks || true`.
-- **Recommend git-lfs when the repo carries large binaries.** The emitted hook doesn't use git-lfs, so this is a setup recommendation, not a dependency you take on. If the repo stores large binaries — images, media, datasets, model weights — tell the user in `git-workflow.md` to install git-lfs and run `git lfs install`, so those don't bloat git history, with the install command for their platform. Add the caveat that *if* they later chain `git lfs pre-push` into `bin/hooks/pre-push`, a machine without git-lfs on PATH would have every push refused — so that step must fail open when the binary is absent (`command -v git-lfs || exit 0` ahead of it); the guard's own promise is to never wedge a push. If the repo has no large binaries, skip it — don't provision what isn't needed.
+- **Carry git-lfs through the hooks when `.gitattributes` tracks LFS files.** `core.hooksPath` stops git reading `.git/hooks`, so LFS's own hooks stop firing. Splice [lfs-hooks.snippet](lfs-hooks.snippet) into `{{LFS_PRE_PUSH_BLOCK}}`, write its three `post-*` hooks, and add `command -v git-lfs >/dev/null 2>&1 && git lfs install --local --skip-repo >/dev/null 2>&1 || true` to both activators. The pre-push refuses without the binary: the guard's fail-open rule covers its own checks, and an LFS upload that silently didn't happen is a broken push. Repo stores large binaries but tracks none yet → recommend git-lfs in `git-workflow.md` and delete the placeholder.
 - [promote.template](promote.template) → `bin/promote`, `chmod +x` — **stage-promotion topology only**
 - [version-mrvf.template](version-mrvf.template) or [version-semver.template](version-semver.template) → `bin/version`, `chmod +x`; seed `VERSION`
-- [version-bump.snippet](version-bump.snippet) → two blocks, spliced into ship's `{{VERSION_PREDICT_BLOCK}}` (before the commit) and `{{VERSION_VERIFY_BLOCK}}` (after the PR opens) — **M.R.V.f only**; for semver or no versioning, delete both placeholder lines. They're a pair: the predict block sets `$predicted`, which the verify block reads.
+- [version-bump.snippet](version-bump.snippet) → three blocks, spliced into ship's `{{VERSION_PREDICT_BLOCK}}` (after the commit) and `{{VERSION_VERIFY_BLOCK}}` (after the PR opens), and the guard's `{{GUARD_VERSION_BLOCK}}` — **M.R.V.f only**; for semver or no versioning, delete all three placeholder lines. The first two are a pair: the predict block sets `$predicted` and `$docs_only`, which the verify block reads.
 - The health route, its config wiring, and its test — per [health-endpoint.md](health-endpoint.md)
 - [git-workflow.md](git-workflow.md) → `docs/agents/git-workflow.md`
 
@@ -99,6 +108,8 @@ Edit `CLAUDE.md` if it exists, else `AGENTS.md`, else ask which to create — ne
 The scripts run against a live remote, so prove what you can before the user trusts them, and report exactly what you ran:
 
 - `bash -n` every generated script.
+- `bin/ship --help` and `bin/land --help` print usage, exit 0, and leave `git status` unchanged.
+- `bin/docs-only-paths`, if generated: `printf 'README.md\n'` exits 0; `printf 'README.md\n<a source file>\n'` exits 1; empty input exits 1.
 - `bin/ship` on a clean tree with no commits ahead of the base — prints the
   nothing-to-ship guard, exits 1. On a dirty tree with no title (nothing to
   borrow one from) it prints usage and exits 2. On a prepared branch (commits

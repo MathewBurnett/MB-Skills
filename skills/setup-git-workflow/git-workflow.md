@@ -25,6 +25,19 @@ it commits the leftovers on top. It stops at the PR on purpose — review happen
 there. `land` is the separate, deliberate merge. Branch names are derived from
 the title: `feat: add export` → `feat/add-export`.
 
+Mid-task, `bin/check` formats the files you've touched and runs the tests. It's the
+fast loop; `ship` is what decides a PR is ready.
+
+### Docs-only changes
+
+[Delete this section if `bin/docs-only-paths` wasn't generated.]
+
+A change whose every path `bin/docs-only-paths` matches ships through `bin/ship` and
+`bin/land` like any other, but `ship` leaves `VERSION` alone, CI's `paths-ignore`
+skips the workflow, and `land` accepts the missing checks. One non-matching file makes
+the whole PR a normal one. The script and both `paths-ignore` lists mirror each other:
+change one, change all three.
+
 ### Push guard
 
 A `pre-push` hook (`bin/hooks/pre-push`, wired in via `core.hooksPath bin/hooks`)
@@ -34,7 +47,8 @@ stops two pushes from happening behind `ship`'s back:
    those build and ship on merge, so nothing reaches them except a reviewed PR.
 2. **A push to a feature branch whose open PR runs checks** (base in
    `{{CHECKED_BASES}}`) — it re-runs that PR's CI on an unstamped, unverified
-   commit.
+   commit. [M.R.V.f only:] A commit whose `VERSION` already names the PR passes, and
+   so does a docs-only PR, which deliberately carries no stamp.
 
 The aim is a **one-run PR**: `ship` stamps `VERSION` and runs verify *before* it
 pushes, so CI runs once, green, on a commit that's already right. A bare
@@ -76,10 +90,9 @@ install [git-lfs](https://git-lfs.com) — it keeps them out of git history:
 [brew install git-lfs | apt-get install git-lfs] && git lfs install
 ```
 
-The push guard doesn't use git-lfs. But if you ever chain `git lfs pre-push`
-into `bin/hooks/pre-push`, guard that step so a machine without git-lfs warns
-instead of blocking every push — put `command -v git-lfs || exit 0` ahead of it.
-The hook's job is to never wedge a push.
+[When `.gitattributes` tracks LFS files:] `bin/hooks` carries the LFS hooks, because
+`core.hooksPath` stops git reading `.git/hooks`. Without the `git-lfs` binary every
+push is refused: pushing anyway would publish pointers with no objects behind them.
 
 ## Epic branches
 
@@ -125,10 +138,8 @@ or PR, which share a number sequence — stamps it before the first push, then c
 the real number once the PR is open and amends only if the guess lost a race. Normal
 case: CI runs once, on a commit that already carries the right version.
 
-What ship must never do is bump in a follow-up `[skip ci]` commit. That leaves the
-head SHA with *no checks at all*, and `bin/land` trusts `gh pr checks` — it would
-read "no checks reported" and merge straight through, gating on nothing. Don't
-reintroduce one.
+A correction amends rather than following up. A `[skip ci]` bump would leave the
+head SHA with *no checks at all*, and `bin/land` refuses that on a base that runs CI.
 
 Bump the rest by hand: `bin/version epic` when an epic lands, `bin/version major` for
 a milestone, `bin/version fix` for a commit with no PR.

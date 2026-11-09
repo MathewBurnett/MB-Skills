@@ -1,0 +1,52 @@
+#!/usr/bin/env bash
+# The fast iteration loop: auto-fix every file the branch has touched, then run the
+# tests — one call instead of the usual format / re-check / test round trip.
+#
+#   bin/check                       # auto-fix + full suite
+#   bin/check {{CHECK_FILTER_EXAMPLE}}     # auto-fix + a scoped run (arguments pass through)
+#   bin/check --base {{EPIC_EXAMPLE}}    # diff against that base instead of {{DEFAULT_BASE}}
+#
+# Not a gate — bin/ship re-verifies before it ships, and is what decides a PR is ready.
+set -euo pipefail
+cd "$(dirname "$0")/.."
+
+usage() {
+    cat <<'EOF'
+usage: bin/check [--base <branch>] [test-args...]
+
+Auto-fix every file the branch has touched, then run the tests. Not a gate:
+bin/ship re-verifies before it ships.
+
+  -b, --base <branch>   base to diff "changed" files against (default: {{DEFAULT_BASE}})
+  -h, --help            show this help and exit
+EOF
+}
+
+base="{{DEFAULT_BASE}}"
+args=()
+while [ $# -gt 0 ]; do
+    case "$1" in
+        -h|--help) usage; exit 0 ;;
+        -b|--base) base="${2:?--base needs a branch}"; shift 2 ;;
+        --base=*)  base="${1#*=}"; shift ;;
+        *)         args+=("$1"); shift ;;
+    esac
+done
+set -- "${args[@]+"${args[@]}"}"
+
+# The same "changed" definition bin/ship uses, so a file formatted here is exactly a
+# file ship would otherwise reformat as a surprise later.
+base_ref=$(git rev-parse --verify -q "refs/heads/$base" \
+    || git rev-parse --verify -q "refs/remotes/origin/$base" \
+    || true)
+changed=$( {
+    [ -n "$base_ref" ] && git diff --name-only --diff-filter=d "$base_ref...HEAD" -- {{SOURCE_DIR}};
+    git diff --name-only --diff-filter=d HEAD -- {{SOURCE_DIR}};
+    git ls-files -o --exclude-standard -- {{SOURCE_DIR}};
+} | grep -Ei '{{SOURCE_EXT}}' | sort -u || true)
+
+echo "→ formatting…"
+{{LINT_COMMANDS}}
+
+echo "→ tests…"
+{{CHECK_COMMANDS}}

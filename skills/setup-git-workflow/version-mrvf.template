@@ -49,6 +49,8 @@ require_number() {
 }
 
 case "${1:-show}" in
+    -h|--help)
+        echo "usage: bin/version {show|pr [<n>]|fix|epic|major}"; exit 0 ;;
     show)
         echo "$M.$R.$V.$f"; exit 0 ;;
     fix)

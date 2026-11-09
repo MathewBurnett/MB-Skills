@@ -25,11 +25,36 @@ cd "$(dirname "$0")/.."
 # then has an open PR) carry it.
 export GIT_SHIP=1
 
+# ship owns the knowledge-graph update (below): one synchronous `graphify update`
+# folded into the commit it describes. Without this, the checkout and commit here
+# fire graphify's post-checkout/post-commit hooks, which rebuild in the background
+# and land as a stray uncommitted diff after `git commit` has returned. A no-op in
+# a repo without graphify.
+export GRAPHIFY_SKIP_HOOK=1
+
+usage() {
+    cat <<'EOF'
+usage: bin/ship [--base <branch>] "<title>" ["<body>"]
+
+Raise a PR for the branch's changes: uncommitted work, commits already prepared
+on the branch, or both. Verifies, branches off the base if needed, commits
+anything still uncommitted, pushes, and opens a PR. Does not merge; see bin/land.
+
+  bin/ship "feat: short title" ["longer body"]    commit the working tree, then ship
+  bin/ship "feat: short title"                    a prepared branch: ship its commits as-is
+  bin/ship                                        prepared branch, title from its first commit
+
+  -b, --base <branch>   target branch for the PR (default: {{DEFAULT_BASE}})
+  -h, --help            show this help and exit
+EOF
+}
+
 # --base/-b <branch> may appear anywhere; the rest are positional title/body.
 base="{{DEFAULT_BASE}}"
 args=()
 while [ $# -gt 0 ]; do
     case "$1" in
+        -h|--help) usage; exit 0 ;;
         -b|--base) base="${2:?--base needs a branch}"; shift 2 ;;
         --base=*)  base="${1#*=}"; shift ;;
         *)         args+=("$1"); shift ;;
@@ -47,33 +72,43 @@ base_ref=$(git rev-parse --verify -q "refs/heads/$base" \
     || git rev-parse --verify -q "refs/remotes/origin/$base" \
     || true)
 
-# How is the work presented? Two independent signals, either one enough to ship:
-# a dirty working tree (uncommitted changes), or commits already ahead of the
-# base (a branch prepared with its own commits).
-if [ -n "$(git status --porcelain)" ]; then worktree_dirty=true; else worktree_dirty=false; fi
 ahead=0
 if [ -n "$base_ref" ]; then ahead=$(git rev-list --count "$base_ref..HEAD"); fi
 
-if ! $worktree_dirty && [ "$ahead" -eq 0 ]; then
+if [ -z "$(git status --porcelain)" ] && [ "$ahead" -eq 0 ]; then
     echo "✗ nothing to ship — clean tree with no commits ahead of $base" >&2
     exit 1
 fi
 
 # The title names the PR. On a prepared branch it may be omitted and taken from
 # the first commit ahead of the base; it's required only when there's no commit
-# to borrow it from (an uncommitted-only ship).
+# to borrow it from (an uncommitted-only ship). tail -1 on newest-first log, not
+# `--reverse | head -1`: head closing the pipe early SIGPIPEs git log, and pipefail
+# turns that into a spurious abort.
 if [ -z "$title" ]; then
-    if [ "$ahead" -gt 0 ]; then title=$(git log --reverse --format=%s "$base_ref..HEAD" | head -1); fi
+    if [ "$ahead" -gt 0 ]; then title=$(git log --format=%s "$base_ref..HEAD" | tail -1); fi
     [ -n "$title" ] || { echo "usage: bin/ship [--base <branch>] \"<title>\" [\"<body>\"]" >&2; exit 2; }
+fi
+
+# The body describes the PR. Borrow it from the commits when the caller passed
+# none, dropping trailers so they aren't doubled: a commit that already carries a
+# real explanation should ship a real PR body, not a footer-only one.
+if [ -z "$body" ] && [ "$ahead" -gt 0 ]; then
+    body=$(git log --reverse --format='%b' "$base_ref..HEAD" \
+        | { grep -vE '^(Co-Authored-By|Signed-off-by|Claude-Session|🤖 Generated with):?' || true; } \
+        | cat -s)
 fi
 
 # {{FORMATTER}} runs on the changed files only (not the whole tree) so adopting
 # it never produces a surprise reformat. "Changed" spans everything the branch
 # touches against the base — committed ($base_ref...HEAD) *and* working-tree — so
 # a prepared branch is linted just as thoroughly as an uncommitted one.
+#
+# --diff-filter=d drops deletions: a removed file would otherwise reach the
+# formatter as a path that no longer exists, which fails the whole run.
 changed=$( {
-    [ -n "$base_ref" ] && git diff --name-only "$base_ref...HEAD" -- {{SOURCE_DIR}};
-    git diff --name-only HEAD -- {{SOURCE_DIR}};
+    [ -n "$base_ref" ] && git diff --name-only --diff-filter=d "$base_ref...HEAD" -- {{SOURCE_DIR}};
+    git diff --name-only --diff-filter=d HEAD -- {{SOURCE_DIR}};
     git ls-files -o --exclude-standard -- {{SOURCE_DIR}};
 } | grep -Ei '{{SOURCE_EXT}}' | sort -u || true)
 
@@ -90,6 +125,8 @@ if ! { {{VERIFY_COMMANDS}}; } >/tmp/ship-verify.log 2>&1; then
     echo "✗ verify failed:"; tail -25 /tmp/ship-verify.log; exit 1
 fi
 echo "✓ verify green"
+
+{{SLOW_TESTS_BLOCK}}
 
 # Don't commit onto a persistent branch directly — cut a feature branch first.
 # The base always counts as protected, whatever PROTECTED_BRANCHES lists.
@@ -112,47 +149,63 @@ if $needs_branch; then
     git checkout -q -b "$branch"
 fi
 
-# Re-runnable: does this branch already have a PR? Settled *before* the push,
-# because the version block below needs to know — a re-run must leave VERSION
-# alone (see the snippet), and by the time we've pushed it's too late to stamp
-# the commit without rewriting it.
-if pr_url=$(gh pr view "$branch" --json url -q .url 2>/dev/null) && [ -n "$pr_url" ]; then
-    fresh_pr=false
-else
-    fresh_pr=true
-fi
+# Re-runnable: is a PR open for this branch right now? `gh pr list --state open`,
+# not `gh pr view <branch>`: view returns the branch's most recent PR in any state,
+# so a reused branch would find an old merged PR and never stamp or open a new one.
+existing_pr=$(gh pr list --head "$branch" --state open --json number -q '.[0].number' 2>/dev/null || true)
+if [ -n "$existing_pr" ]; then fresh_pr=false; else fresh_pr=true; fi
 
-{{VERSION_PREDICT_BLOCK}}
-
-# Commit the work the way it's presented. A dirty tree commits under the title,
-# folding in the VERSION stamp the predict block just wrote (if any). A clean
-# prepared branch ships its commits *untouched* — the author's history is never
-# rewritten — and any VERSION stamp rides in on its own commit, so even a branch
-# that was already pushed takes a plain fast-forward. made_commit records which
-# happened, so the verify block below knows whether it may amend.
+# Commit anything still uncommitted, read *now* so a reformat the step above just
+# made is included. A clean prepared branch ships its commits untouched — the
+# author's history is never rewritten. made_commit records whether ship owns the
+# head commit, which is what lets the version blocks amend it.
+git add -A
 made_commit=false
-if $worktree_dirty; then
-    git add -A
+if git diff --cached --quiet; then
+    echo "→ shipping $(git rev-list --count "${base_ref:-HEAD}..HEAD") prepared commit(s) — no new commit created"
+else
+    # Fold the knowledge graph into the same commit as the code it describes.
+    # Best-effort: a missing binary or a failed update never blocks a ship.
+    if [ -d graphify-out ] && command -v graphify >/dev/null 2>&1; then
+        echo "→ updating the knowledge graph…"
+        if graphify update . >/tmp/ship-graphify.log 2>&1; then
+            git add -A -- graphify-out
+        else
+            echo "  (graphify update failed — see /tmp/ship-graphify.log; shipping without it)"
+        fi
+    fi
+
     msg="$title"
     [ -n "$body" ] && msg="$title
 
 $body"
-    printf '%s\n\nCo-Authored-By: Claude Opus 4.8 <noreply@anthropic.com>\n' "$msg" | git commit -q -F -
-    made_commit=true
-elif [ -n "${predicted:-}" ] && [ -n "$(git status --porcelain VERSION)" ]; then
-    git add VERSION
-    printf 'chore: stamp VERSION for #%s\n\nCo-Authored-By: Claude Opus 4.8 <noreply@anthropic.com>\n' "$predicted" | git commit -q -F -
+    # No trailers of our own: attribution belongs at the end of the body, written
+    # by whoever knows who did the work.
+    printf '%s\n' "$msg" | git commit -q -F -
     made_commit=true
 fi
+
+{{VERSION_PREDICT_BLOCK}}
 
 git push -q -u origin "$branch"
 
 if $fresh_pr; then
-    gh pr create --base "$base" --head "$branch" --title "$title" --body "$body
+    # A ticket named in the title as "(#NN)" becomes a "Closes #NN" line in the body:
+    # GitHub reads closing keywords from the body only, never the title.
+    closes=$(printf '%s\n' "$title" | grep -oE '#[0-9]+' | sort -u | sed 's/^/Closes /' || true)
+    pr_body="$body"
+    while IFS= read -r line; do
+        [ -n "$line" ] || continue
+        printf '%s\n' "$pr_body" | grep -qiF "$line" && continue
+        pr_body="$pr_body
+
+$line"
+    done <<< "$closes"
+    gh pr create --base "$base" --head "$branch" --title "$title" --body "$pr_body
 
 🤖 Generated with [Claude Code](https://claude.com/claude-code)"
 else
-    echo "↻ updated existing PR: $pr_url"
+    echo "↻ updated existing PR #$existing_pr"
 fi
 
 {{VERSION_VERIFY_BLOCK}}

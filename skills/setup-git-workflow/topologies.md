@@ -50,4 +50,4 @@ An epic collects several PRs' worth of work that shouldn't reach the base half-f
 
 **Pick it when** a feature is too big for one PR but incoherent in pieces.
 
-**Cost:** the epic drifts from its base the whole time it's open. Merge the base into the epic regularly — the alternative is one enormous conflict at the end. Epic PRs usually carry no CI checks, which is the "no checks reported" path in `bin/land`.
+**Cost:** the epic drifts from its base the whole time it's open. Merge the base into the epic regularly — the alternative is one enormous conflict at the end. Slices usually run the same PR checks as the base, so they're tested before they land in the epic.

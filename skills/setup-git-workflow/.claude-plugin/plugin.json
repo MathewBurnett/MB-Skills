@@ -1,6 +1,6 @@
 {
   "name": "setup-git-workflow",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Scaffolds the necessary Git workflow plumbing in a repository (e.g., PR review structure, CI integration points) to ensure consistent development practices from feature branch to merge.",
   "author": {
     "name": "Mathew Burnett"
